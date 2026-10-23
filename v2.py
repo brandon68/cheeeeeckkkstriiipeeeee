@@ -63,7 +63,6 @@ contador_expiradas = 0
 # =========================================================
 # SISTEMA DE CRÉDITOS Y ARCHIVOS PERSISTENTES
 # =========================================================
-# En Railway, apuntamos directamente a la ruta base para que use el volumen persistente
 ARCHIVO_CLIENTES = os.path.join(BASE_DIR, "clientes.txt")
 creditos_lock = threading.Lock()
 
@@ -119,19 +118,54 @@ def registrar_usuario(user_id, username):
     with creditos_lock:
         clientes = cargar_clientes()
         user_str = str(user_id)
+        clean_uname = (username or "anonimo").lstrip("@")
+        
         if user_str in clientes:
+            # Actualizar username por si cambió
+            if clientes[user_str]["username"] != clean_uname:
+                clientes[user_str]["username"] = clean_uname
+                guardar_clientes(clientes)
             return False, clientes[user_str]["creditos"]
         
-        clientes[user_str] = {"username": username or "anonimo", "creditos": CREDITOS_INICIALES}
+        clientes[user_str] = {"username": clean_uname, "creditos": CREDITOS_INICIALES}
         guardar_clientes(clientes)
 
         notificar_propietario(
             f"👤 <b>NUEVO REGISTRO EN EL BOT (+40 CRÉDITOS)</b>\n"
-            f"• <b>Usuario:</b> @{username or 'anonimo'}\n"
+            f"• <b>Usuario:</b> @{clean_uname}\n"
             f"• <b>ID:</b> <code>{user_id}</code>\n"
             f"• <b>Bono otorgado:</b> 40 créditos gratis"
         )
         return True, CREDITOS_INICIALES
+
+
+def modificar_creditos_por_identificador(identificador, cantidad):
+    """Permite sumar o restar créditos buscando por ID o Username."""
+    with creditos_lock:
+        clientes = cargar_clientes()
+        id_buscado = str(identificador).strip().lstrip("@")
+        
+        user_key = None
+        # Buscar por ID exacto
+        if id_buscado in clientes:
+            user_key = id_buscado
+        else:
+            # Buscar por Username
+            for uid, data in clientes.items():
+                if data["username"].lower() == id_buscado.lower():
+                    user_key = uid
+                    break
+        
+        if not user_key:
+            return False, "Usuario no encontrado en la base de datos."
+        
+        clientes[user_key]["creditos"] += cantidad
+        if clientes[user_key]["creditos"] < 0:
+            clientes[user_key]["creditos"] = 0
+            
+        nuevo_saldo = clientes[user_key]["creditos"]
+        guardar_clientes(clientes)
+        return True, (user_key, clientes[user_key]["username"], nuevo_saldo)
 
 
 def cobrar_creditos_por_resultado(user_id, es_exito):
@@ -152,7 +186,6 @@ def cobrar_creditos_por_resultado(user_id, es_exito):
         return 0, costo
 
 
-# Archivos de resultados locales persistentes
 LIVES_FILE = os.path.join(BASE_DIR, "lives.txt")
 FAIL_FILE = os.path.join(BASE_DIR, "fail.txt")
 
@@ -609,6 +642,97 @@ def cmd_start(message):
     bot.send_message(message.chat.id, msg, parse_mode="HTML", reply_markup=obtener_menu_principal())
 
 
+@bot.message_handler(commands=["id", "me", "perfil"])
+def cmd_mi_perfil(message):
+    """Muestra al cliente su ID, su Username y sus créditos actuales."""
+    uid = message.from_user.id
+    uname = message.from_user.username or "Sin usuario"
+    # Asegurar registro si no estaba
+    registrar_usuario(uid, message.from_user.username)
+    saldo = obtener_saldo(uid)
+
+    texto = (
+        "👤 <b>TUS DATOS DE PERFIL</b>\n"
+        "─────────────────────────\n"
+        f"• <b>Nombre:</b> {message.from_user.first_name}\n"
+        f"• <b>Username:</b> @{uname}\n"
+        f"• <b>ID de Telegram:</b> <code>{uid}</code>\n"
+        f"• <b>Créditos disponibles:</b> <b>{saldo}</b> 💰"
+    )
+    bot.send_message(message.chat.id, texto, parse_mode="HTML")
+
+
+@bot.message_handler(commands=["creditos", "credit"])
+def cmd_gestion_creditos(message):
+    """Comando exclusivo del admin para sumar o restar créditos usando ID o Username.
+       Uso: /creditos <ID_o_Username> <cantidad>
+       Ejemplo: /creditos 5504611412 +20  ó  /creditos @Juanper33z -10  ó  /creditos 5504611412 50
+    """
+    if message.from_user.id != PROPIETARIO_ID:
+        bot.send_message(message.chat.id, "⛔ Comando exclusivo del administrador.")
+        return
+
+    partes = message.text.split()
+    if len(partes) < 3:
+        bot.send_message(
+            message.chat.id,
+            "⚠️ <b>Uso incorrecto del comando.</b>\n\n"
+            "Formatos válidos:\n"
+            "• <code>/creditos ID_o_Username +20</code> (para sumar)\n"
+            "• <code>/creditos ID_o_Username -10</code> (para restar)\n"
+            "• <code>/creditos ID_o_Username 50</code> (establece/suma directa)",
+            parse_mode="HTML"
+        )
+        return
+
+    identificador = partes[1]
+    param_cant = partes[2]
+
+    try:
+        if param_cant.startswith("+"):
+            operacion = "sumar"
+            cantidad = int(param_cant[1:])
+        elif param_cant.startswith("-"):
+            operacion = "restar"
+            cantidad = -int(param_cant[1:])
+        else:
+            operacion = "sumar"
+            cantidad = int(param_cant)
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Cantidad inválida. Debe ser un número entero (ej: <code>+20</code> o <code>-10</code>).", parse_mode="HTML")
+        return
+
+    exito, resultado = modificar_creditos_por_identificador(identificador, cantidad)
+    if not exito:
+        bot.send_message(message.chat.id, f"❌ {resultado}", parse_mode="HTML")
+        return
+
+    uid_afectado, uname_afectado, nuevo_saldo = resultado
+    signo_str = f"+{cantidad}" if cantidad >= 0 else str(cantidad)
+
+    bot.send_message(
+        message.chat.id,
+        f"✅ <b>CRÉDITOS ACTUALIZADOS CON ÉXITO</b>\n\n"
+        f"• <b>Usuario:</b> @{uname_afectado}\n"
+        f"• <b>ID:</b> <code>{uid_afectado}</code>\n"
+        f"• <b>Modificación:</b> <code>{signo_str}</code> créditos\n"
+        f"• <b>Nuevo saldo total:</b> <b>{nuevo_saldo}</b> créditos",
+        parse_mode="HTML"
+    )
+
+    # Intentar notificar al cliente afectado de manera automática
+    try:
+        bot.send_message(
+            int(uid_afectado),
+            f"🔔 <b>¡El administrador ha actualizado tus créditos!</b>\n\n"
+            f"• <b>Cambio:</b> <code>{signo_str}</code> créditos\n"
+            f"• <b>Tu nuevo saldo:</b> <b>{nuevo_saldo}</b> créditos",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
 @bot.message_handler(commands=["anuncio", "broadcast"])
 def cmd_anuncio(message):
     if message.from_user.id != PROPIETARIO_ID:
@@ -721,7 +845,9 @@ def callback_listener(call):
             "• 🎁 <b>Bono de Bienvenida:</b> 40 créditos gratis al registrarte.\n"
             "• ✅ <b>Éxito (SUCCESS):</b> Se cobran <b>4 créditos</b> por cada tarjeta aprobada.\n"
             "• ❌ <b>Fallo (FAIL):</b> Totalmente <b>GRATIS</b> (0 créditos descontados).\n"
-            "• ⏳ <b>Expiradas / Formato Inválido:</b> Se descartan automáticamente antes de procesar sin costo."
+            "• ⏳ <b>Expiradas / Formato Inválido:</b> Se descartan automáticamente antes de procesar sin costo.\n\n"
+            "🔍 <b>COMANDOS DISPONIBLES:</b>\n"
+            "• /id (o /me) ➔ Muestra tu ID, usuario y créditos."
         )
         bot.send_message(chat_id, inst, parse_mode="HTML")
     elif call.data == "btn_avisar":
