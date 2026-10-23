@@ -25,6 +25,18 @@ else:
     BASE_DIR = os.path.dirname(__file__)
 
 # =========================================================
+# CONFIGURACIÓN DE RUTAS Y VARIABLES (RAILWAY VOLUME)
+# =========================================================
+# Si estamos en Railway y existe la carpeta del volumen, guardamos ahí de forma permanente.
+DATA_DIR = "/app/data" if os.path.exists("/app/data") else BASE_DIR
+
+# Rutas de archivos apuntando a la carpeta persistente
+ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
+LIVES_FILE = os.path.join(DATA_DIR, "lives.txt")
+FAIL_FILE = os.path.join(DATA_DIR, "fail.txt")
+COMBO_PATH = os.path.join(DATA_DIR, "combo.txt")
+
+# =========================================================
 # CONFIGURACIÓN DESDE VARIABLES DE ENTORNO (RAILWAY)
 # =========================================================
 TOKEN = os.getenv("TOKEN", "8531578967:AAEZykF8G26VsWB2C27h-ign6P3X7-Xrx0s")
@@ -60,11 +72,6 @@ contador_fail = 0
 contador_success = 0
 contador_expiradas = 0
 
-# =========================================================
-# SISTEMA DE CRÉDITOS Y ARCHIVOS PERSISTENTES
-# =========================================================
-# En Railway, apuntamos directamente a la ruta base para que use el volumen persistente
-ARCHIVO_CLIENTES = os.path.join(BASE_DIR, "clientes.txt")
 creditos_lock = threading.Lock()
 
 COSTO_SUCCESS = 4
@@ -150,11 +157,6 @@ def cobrar_creditos_por_resultado(user_id, es_exito):
             guardar_clientes(clientes)
             return nuevo_saldo, costo
         return 0, costo
-
-
-# Archivos de resultados locales persistentes
-LIVES_FILE = os.path.join(BASE_DIR, "lives.txt")
-FAIL_FILE = os.path.join(BASE_DIR, "fail.txt")
 
 
 def validar_tarjeta(cc, mes, anio, cvv):
@@ -540,9 +542,9 @@ def recibir_datos_lote(message):
         )
         return
 
-    combos_path = os.path.join(BASE_DIR, "combo.txt")
+    combos_path = COMBO_PATH
     if not os.path.exists(combos_path):
-        bot.send_message(chat_id, "❌ No se encontró el archivo `combo.txt` en el servidor.")
+        bot.send_message(chat_id, "❌ No se encontró el archivo `combo.txt` en la carpeta /app/data del servidor.")
         return
     
     with open(combos_path, "r", encoding="utf-8") as f:
@@ -732,5 +734,5 @@ def callback_listener(call):
 
 if __name__ == "__main__":
     threading.Thread(target=worker_principal, daemon=True, name="Worker-HTTP").start()
-    print("🤖 Bot de Telegram (Railway Ready) en marcha...")
+    print("🤖 Bot de Telegram (Railway Volume Ready) en marcha...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
