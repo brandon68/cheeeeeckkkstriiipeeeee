@@ -63,8 +63,13 @@ contador_expiradas = 0
 # =========================================================
 # SISTEMA DE CRÉDITOS Y ARCHIVOS PERSISTENTES
 # =========================================================
-ARCHIVO_CLIENTES = os.path.join(BASE_DIR, "clientes.txt")
-creditos_lock = threading.Lock()
+# Crear directorio persistente si no existe
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
+LIVES_FILE = os.path.join(DATA_DIR, "lives.txt")
+FAIL_FILE = os.path.join(DATA_DIR, "fail.txt")
 
 COSTO_SUCCESS = 4
 COSTO_FAIL = 0
