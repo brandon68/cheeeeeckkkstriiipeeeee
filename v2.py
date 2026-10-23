@@ -63,8 +63,11 @@ contador_expiradas = 0
 # =========================================================
 # SISTEMA DE CRÉDITOS Y ARCHIVOS PERSISTENTES
 # =========================================================
-# Crear directorio persistente si no existe
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# =========================================================
+# RUTAS PERSISTENTES (VOLUMEN DE RAILWAY)
+# =========================================================
+# Si la carpeta /app/data existe (en Railway), guarda ahí. Si no, usa la ruta local.
+DATA_DIR = os.path.join(BASE_DIR, "data") if os.path.exists(os.path.join(BASE_DIR, "data")) else BASE_DIR
 os.makedirs(DATA_DIR, exist_ok=True)
 
 ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
