@@ -573,7 +573,7 @@ def recibir_datos_lote(message):
         )
         return
 
-    combos_path = os.path.join(BASE_DIR, "combo.txt")
+    combos_path = os.path.join(BASE_DIR, "COMBO.txt")
     if not os.path.exists(combos_path):
         bot.send_message(chat_id, "❌ No se encontró el archivo `combo.txt` en el servidor.")
         return
