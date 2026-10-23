@@ -60,19 +60,15 @@ contador_fail = 0
 contador_success = 0
 contador_expiradas = 0
 
-# =========================================================
-# SISTEMA DE CRÉDITOS Y ARCHIVOS PERSISTENTES
-# =========================================================
-# =========================================================
-# RUTAS PERSISTENTES (VOLUMEN DE RAILWAY)
-# =========================================================
-# Si la carpeta /app/data existe (en Railway), guarda ahí. Si no, usa la ruta local.
 DATA_DIR = os.path.join(BASE_DIR, "data") if os.path.exists(os.path.join(BASE_DIR, "data")) else BASE_DIR
 os.makedirs(DATA_DIR, exist_ok=True)
 
 ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
 LIVES_FILE = os.path.join(DATA_DIR, "lives.txt")
 FAIL_FILE = os.path.join(DATA_DIR, "fail.txt")
+
+# 👇 ¡Agrega esta línea aquí para solucionar el error! 👇
+creditos_lock = threading.Lock()
 
 COSTO_SUCCESS = 4
 COSTO_FAIL = 0
