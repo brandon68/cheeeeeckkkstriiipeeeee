@@ -297,13 +297,36 @@ def solicitar_datos_ccs(chat_id, user_id):
         bot.send_message(chat_id, "❌ No estás registrado. Escribe /start primero.")
         return
 
-    if saldo <= 0:
+    # 👇 Validación estricta: No dejar iniciar si no tiene para al menos 1 éxito
+    if saldo < COSTO_SUCCESS:
         bot.send_message(
             chat_id,
-            f"⛔ No tienes créditos disponibles (Saldo: <b>{saldo}</b>). Contacta soporte.",
+            f"⛔ <b>Saldo insuficiente para iniciar:</b> Tienes <b>{saldo} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b> para procesar.",
             parse_mode="HTML",
         )
         return
+
+    with estado_lock:
+        if estado["en_progreso"]:
+            markup_aviso = InlineKeyboardMarkup()
+            markup_aviso.add(InlineKeyboardButton("🔔 Avisarme cuando esté libre", callback_data="btn_avisar"))
+            bot.send_message(
+                chat_id,
+                "⚠️ Ya hay un proceso de verificación en ejecución. ¿Deseas que te avise en cuanto quede desocupado?",
+                reply_markup=markup_aviso,
+            )
+            return
+
+    msg = bot.send_message(
+        chat_id,
+        f"📋 <b>Gate Stripe API Active</b>\n"
+        f"💳 <b>Saldo disponible: {saldo} créditos</b>\n"
+        f"<i>(Costo: {COSTO_SUCCESS} créditos por SUCCESS | Fails totalmente GRATIS)</i>\n\n"
+        "Envía tus tarjetas en formato <code>CC|MM|AAAA|CVV</code> o sube un archivo <code>.txt</code>:\n"
+        "<i>(Si tu lista está desordenada, puedes formatearla con @filtro_carbon_bot)</i>",
+        parse_mode="HTML",
+    )
+    bot.register_next_step_handler(msg, recibir_datos_lote)
 
     with estado_lock:
         if estado["en_progreso"]:
