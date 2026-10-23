@@ -463,19 +463,18 @@ def worker_principal():
             correo = tarea.get("correo")
             password = tarea.get("password")
 
-            # 👇 VALIDACIÓN NUEVA: Verificar si aún tiene créditos antes de procesar cada tarjeta
+            # 👇 VALIDACIÓN ESTRICTA DE SALDO MÍNIMO PARA CONTINUAR 👇
             if user_id:
                 saldo_actual = obtener_saldo(user_id)
-                if saldo_actual is None or saldo_actual <= 0:
-                    # Detener el lote para este usuario de inmediato
+                if saldo_actual is None or saldo_actual < COSTO_SUCCESS:
                     with estado_lock:
                         estado["en_progreso"] = False
                     bot.send_message(
                         chat_id, 
-                        "⛔ <b>Proceso pausado:</b> Te has quedado sin créditos disponibles durante el chequeo.", 
+                        f"⛔ <b>Proceso detenido:</b> Tu saldo actual es de <b>{saldo_actual} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b> para continuar procesando.", 
                         parse_mode="HTML"
                     )
-                    break # Sale del bucle y detiene el lote
+                    break # Detiene el lote de inmediato y sale del bucle
 
             exito, mensaje_resultado = procesar_tarjeta_api(correo, password, linea_cc)
 
