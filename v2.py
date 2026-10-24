@@ -67,7 +67,6 @@ ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
 LIVES_FILE = os.path.join(DATA_DIR, "lives.txt")
 FAIL_FILE = os.path.join(DATA_DIR, "fail.txt")
 
-# 👇 ¡Agrega esta línea aquí para solucionar el error! 👇
 creditos_lock = threading.Lock()
 
 COSTO_SUCCESS = 4
@@ -125,7 +124,6 @@ def registrar_usuario(user_id, username):
         clean_uname = (username or "anonimo").lstrip("@")
         
         if user_str in clientes:
-            # Actualizar username por si cambió
             if clientes[user_str]["username"] != clean_uname:
                 clientes[user_str]["username"] = clean_uname
                 guardar_clientes(clientes)
@@ -150,11 +148,9 @@ def modificar_creditos_por_identificador(identificador, cantidad):
         id_buscado = str(identificador).strip().lstrip("@")
         
         user_key = None
-        # Buscar por ID exacto
         if id_buscado in clientes:
             user_key = id_buscado
         else:
-            # Buscar por Username
             for uid, data in clientes.items():
                 if data["username"].lower() == id_buscado.lower():
                     user_key = uid
@@ -249,25 +245,43 @@ def obtener_menu_principal():
     return markup
 
 
-def generar_resumen_proceso(user_id=None):
+def generar_resumen_cliente(user_id=None):
     saldo_actual = obtener_saldo(user_id) if user_id else "N/A"
     resumen = (
-        "📊 <b>RESUMEN DEL PROCESO</b>\n"
+        "🏁 <b>¡PROCESO COMPLETADO!</b>\n"
         "─────────────────────────\n"
         f"<b>Total procesadas:</b> {estado['procesados']}/{estado['total']}\n"
         f"✅ <b>SUCCESS:</b> {estado['exitosos']}\n"
         f"❌ <b>FAIL:</b> {estado['fallidos']}\n"
         f"⏳ <b>EXPIRADAS:</b> {contador_expiradas}\n"
         "─────────────────────────\n"
-        f"💰 <b>Saldo actual:</b> {saldo_actual} créditos\n"
+        f"💰 <b>Saldo actual:</b> {saldo_actual} créditos\n\n"
     )
+    
+    resumen += "🟢 <b>ÉXITOS (LIVES):</b>\n"
+    if estado["lista_exitos"]:
+        for item in estado["lista_exitos"]:
+            resumen += f"• <code>{item['cc']}</code> | {item['msg']}\n"
+    else:
+        resumen += "<i>Ninguna tarjeta aprobada.</i>\n"
+
+    resumen += "\n🔴 <b>FALLOS (FAILS):</b>\n"
+    if estado["lista_fallos"]:
+        # Muestra hasta 25 fails para evitar que el mensaje sea demasiado largo en Telegram
+        for item in estado["lista_fallos"][:25]:
+            resumen += f"• <code>{item['cc']}</code> | {item['msg']}\n"
+        if len(estado["lista_fallos"]) > 25:
+            resumen += f"<i>...y {len(estado['lista_fallos']) - 25} fallos más.</i>\n"
+    else:
+        resumen += "<i>Sin fallos registrados.</i>\n"
+
     return resumen
 
 
 def generar_informe_propietario():
     saldo_usuario = obtener_saldo(estado["user_id_actual"]) if estado["user_id_actual"] else "N/A"
     
-    informe = f"🏁 <b>REPORTES Y RESULTADOS DE LOTE</b>\n"
+    informe = f"🏁 <b>INFORME COMPLETO DE LOTE</b>\n"
     informe += f"👤 <b>Usuario:</b> @{estado['usuario_actual']} (<code>{estado['user_id_actual']}</code>)\n"
     informe += f"💰 <b>Saldo restante:</b> {saldo_usuario} cr.\n"
     informe += f"📊 <b>Totales:</b> {estado['procesados']}/{estado['total']} (✅ {estado['exitosos']} | ❌ {estado['fallidos']})\n\n"
@@ -281,10 +295,8 @@ def generar_informe_propietario():
 
     informe += "\n🔴 <b>FALLOS (FAILS):</b>\n"
     if estado["lista_fallos"]:
-        for item in estado["lista_fallos"][:25]:
+        for item in estado["lista_fallos"]:
             informe += f"• <code>{item['cc']}</code> | {item['msg']}\n"
-        if len(estado["lista_fallos"]) > 25:
-            informe += f"<i>...y {len(estado['lista_fallos']) - 25} fallos más.</i>\n"
     else:
         informe += "<i>Sin fallos registrados.</i>\n"
 
@@ -297,7 +309,6 @@ def solicitar_datos_ccs(chat_id, user_id):
         bot.send_message(chat_id, "❌ No estás registrado. Escribe /start primero.")
         return
 
-    # 👇 Validación estricta: No dejar iniciar si no tiene para al menos 1 éxito
     if saldo < COSTO_SUCCESS:
         bot.send_message(
             chat_id,
@@ -322,28 +333,6 @@ def solicitar_datos_ccs(chat_id, user_id):
         f"📋 <b>Gate Stripe API Active</b>\n"
         f"💳 <b>Saldo disponible: {saldo} créditos</b>\n"
         f"<i>(Costo: {COSTO_SUCCESS} créditos por SUCCESS | Fails totalmente GRATIS)</i>\n\n"
-        "Envía tus tarjetas en formato <code>CC|MM|AAAA|CVV</code> o sube un archivo <code>.txt</code>:\n"
-        "<i>(Si tu lista está desordenada, puedes formatearla con @filtro_carbon_bot)</i>",
-        parse_mode="HTML",
-    )
-    bot.register_next_step_handler(msg, recibir_datos_lote)
-
-    with estado_lock:
-        if estado["en_progreso"]:
-            markup_aviso = InlineKeyboardMarkup()
-            markup_aviso.add(InlineKeyboardButton("🔔 Avisarme cuando esté libre", callback_data="btn_avisar"))
-            bot.send_message(
-                chat_id,
-                "⚠️ Ya hay un proceso de verificación en ejecución. ¿Deseas que te avise en cuanto quede desocupado?",
-                reply_markup=markup_aviso,
-            )
-            return
-
-    msg = bot.send_message(
-        chat_id,
-        f"📋 <b>Gate Stripe API Active</b>\n"
-        f"💳 <b>Saldo disponible: {saldo} créditos</b>\n"
-        f"<i>(Costo: 4 créditos por SUCCESS | Fails totalmente GRATIS)</i>\n\n"
         "Envía tus tarjetas en formato <code>CC|MM|AAAA|CVV</code> o sube un archivo <code>.txt</code>:\n"
         "<i>(Si tu lista está desordenada, puedes formatearla con @filtro_carbon_bot)</i>",
         parse_mode="HTML",
@@ -486,7 +475,6 @@ def worker_principal():
             correo = tarea.get("correo")
             password = tarea.get("password")
 
-            # 👇 VALIDACIÓN ESTRICTA DE SALDO MÍNIMO PARA CONTINUAR 👇
             if user_id:
                 saldo_actual = obtener_saldo(user_id)
                 if saldo_actual is None or saldo_actual < COSTO_SUCCESS:
@@ -497,7 +485,7 @@ def worker_principal():
                         f"⛔ <b>Proceso detenido:</b> Tu saldo actual es de <b>{saldo_actual} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b> para continuar procesando.", 
                         parse_mode="HTML"
                     )
-                    break # Detiene el lote de inmediato y sale del bucle
+                    break
 
             exito, mensaje_resultado = procesar_tarjeta_api(correo, password, linea_cc)
 
@@ -513,25 +501,22 @@ def worker_principal():
                     estado["fallidos"] += 1
                     estado["lista_fallos"].append({"cc": linea_cc, "msg": mensaje_resultado})
 
-            notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_resultado)
-
-            status_txt = "✅ ÉXITO" if exito else "❌ FAIL"
-            notificar_propietario(
-                f"⚙️ <b>[{estado['procesados']}/{estado['total']}]</b> @{estado['usuario_actual']}\n"
-                f"💳 <code>{linea_cc}</code>\n"
-                f"📌 <b>{status_txt}:</b> {mensaje_resultado[:80]}"
-            )
+            # Notifica en tiempo real solo si es SUCCESS (Live)
+            if exito:
+                notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_resultado)
 
             with estado_lock:
                 if estado["procesados"] >= estado["total"] or estado["detener"]:
                     estado["en_progreso"] = False
                     if estado["procesados"] >= estado["total"]:
-                        resumen_final = generar_resumen_proceso(user_id)
+                        # Envía el resumen completo con Lives y Fails al cliente al terminar
+                        resumen_final = generar_resumen_cliente(user_id)
                         bot.send_message(
                             chat_id, 
-                            "🏁 <b>¡Proceso completado con éxito!</b>\n\n" + resumen_final, 
+                            resumen_final, 
                             parse_mode="HTML"
                         )
+                        # Envía el reporte completo al propietario
                         notificar_propietario(generar_informe_propietario())
                         notificar_usuarios_en_espera()
 
@@ -546,7 +531,7 @@ def worker_principal():
 def notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_detectado):
     if not chat_id:
         return
-    status_texto = "SUCCESS✅" if exito else "FAIL❌"
+    status_texto = "SUCCESS✅"
     mensaje = f"STATUS: {status_texto}\n💳 <code>{linea_cc}</code>\n💬 <b>Mensaje:</b> <i>{mensaje_detectado[:100]}</i>"
     try:
         bot.send_message(chat_id, mensaje, parse_mode="HTML")
@@ -608,7 +593,7 @@ def recibir_datos_lote(message):
         bot.send_message(
             chat_id, 
             "⛔ Ninguna tarjeta válida para procesar.\n\n"
-            "💡 Si tienes un texto sin formato, usa @filtro_carbon_bot para ordenarlo.",
+            "💡 Si tienes un texto sin formato, usa @filtro_carbon_bot para ordenarlos.",
             parse_mode="HTML"
         )
         return
@@ -687,7 +672,6 @@ def cmd_mi_perfil(message):
     """Muestra al cliente su ID, su Username y sus créditos actuales."""
     uid = message.from_user.id
     uname = message.from_user.username or "Sin usuario"
-    # Asegurar registro si no estaba
     registrar_usuario(uid, message.from_user.username)
     saldo = obtener_saldo(uid)
 
@@ -704,10 +688,6 @@ def cmd_mi_perfil(message):
 
 @bot.message_handler(commands=["creditos", "credit"])
 def cmd_gestion_creditos(message):
-    """Comando exclusivo del admin para sumar o restar créditos usando ID o Username.
-       Uso: /creditos <ID_o_Username> <cantidad>
-       Ejemplo: /creditos 5504611412 +20  ó  /creditos @Juanper33z -10  ó  /creditos 5504611412 50
-    """
     if message.from_user.id != PROPIETARIO_ID:
         bot.send_message(message.chat.id, "⛔ Comando exclusivo del administrador.")
         return
@@ -730,13 +710,10 @@ def cmd_gestion_creditos(message):
 
     try:
         if param_cant.startswith("+"):
-            operacion = "sumar"
             cantidad = int(param_cant[1:])
         elif param_cant.startswith("-"):
-            operacion = "restar"
             cantidad = -int(param_cant[1:])
         else:
-            operacion = "sumar"
             cantidad = int(param_cant)
     except ValueError:
         bot.send_message(message.chat.id, "❌ Cantidad inválida. Debe ser un número entero (ej: <code>+20</code> o <code>-10</code>).", parse_mode="HTML")
@@ -760,7 +737,6 @@ def cmd_gestion_creditos(message):
         parse_mode="HTML"
     )
 
-    # Intentar notificar al cliente afectado de manera automática
     try:
         bot.send_message(
             int(uid_afectado),
@@ -850,7 +826,7 @@ def cmd_stop_proceso(message):
             break
 
     bot.send_message(chat_id, "🛑 <b>El proceso ha sido detenido por el usuario.</b>", parse_mode="HTML")
-    resumen_texto = generar_resumen_proceso(user_id)
+    resumen_texto = generar_resumen_cliente(user_id)
     bot.send_message(chat_id, resumen_texto, parse_mode="HTML")
     
     notificar_propietario(f"🛑 <b>Proceso detenido manualmente</b> por @{message.from_user.username or 'Anonimo'}")
