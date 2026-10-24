@@ -60,10 +60,15 @@ contador_fail = 0
 contador_success = 0
 contador_expiradas = 0
 
+# =========================================================
+# RUTAS PERSISTENTES (VOLUMEN DE RAILWAY)
+# =========================================================
 DATA_DIR = os.path.join(BASE_DIR, "data") if os.path.exists(os.path.join(BASE_DIR, "data")) else BASE_DIR
 os.makedirs(DATA_DIR, exist_ok=True)
 
 ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
+
+# 👇 CORREGIDO: Ahora se guardan dentro de la carpeta /data del volumen persistente
 LIVES_FILE = os.path.join(DATA_DIR, "lives.txt")
 FAIL_FILE = os.path.join(DATA_DIR, "fail.txt")
 
