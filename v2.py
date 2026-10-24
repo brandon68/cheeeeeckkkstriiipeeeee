@@ -245,43 +245,25 @@ def obtener_menu_principal():
     return markup
 
 
-def generar_resumen_cliente(user_id=None):
+def generar_resumen_proceso(user_id=None):
     saldo_actual = obtener_saldo(user_id) if user_id else "N/A"
     resumen = (
-        "🏁 <b>¡PROCESO COMPLETADO!</b>\n"
+        "📊 <b>RESUMEN DEL PROCESO</b>\n"
         "─────────────────────────\n"
         f"<b>Total procesadas:</b> {estado['procesados']}/{estado['total']}\n"
         f"✅ <b>SUCCESS:</b> {estado['exitosos']}\n"
         f"❌ <b>FAIL:</b> {estado['fallidos']}\n"
         f"⏳ <b>EXPIRADAS:</b> {contador_expiradas}\n"
         "─────────────────────────\n"
-        f"💰 <b>Saldo actual:</b> {saldo_actual} créditos\n\n"
+        f"💰 <b>Saldo actual:</b> {saldo_actual} créditos\n"
     )
-    
-    resumen += "🟢 <b>ÉXITOS (LIVES):</b>\n"
-    if estado["lista_exitos"]:
-        for item in estado["lista_exitos"]:
-            resumen += f"• <code>{item['cc']}</code> | {item['msg']}\n"
-    else:
-        resumen += "<i>Ninguna tarjeta aprobada.</i>\n"
-
-    resumen += "\n🔴 <b>FALLOS (FAILS):</b>\n"
-    if estado["lista_fallos"]:
-        # Muestra hasta 25 fails para evitar que el mensaje sea demasiado largo en Telegram
-        for item in estado["lista_fallos"][:25]:
-            resumen += f"• <code>{item['cc']}</code> | {item['msg']}\n"
-        if len(estado["lista_fallos"]) > 25:
-            resumen += f"<i>...y {len(estado['lista_fallos']) - 25} fallos más.</i>\n"
-    else:
-        resumen += "<i>Sin fallos registrados.</i>\n"
-
     return resumen
 
 
 def generar_informe_propietario():
     saldo_usuario = obtener_saldo(estado["user_id_actual"]) if estado["user_id_actual"] else "N/A"
     
-    informe = f"🏁 <b>INFORME COMPLETO DE LOTE</b>\n"
+    informe = f"🏁 <b>REPORTES Y RESULTADOS DE LOTE</b>\n"
     informe += f"👤 <b>Usuario:</b> @{estado['usuario_actual']} (<code>{estado['user_id_actual']}</code>)\n"
     informe += f"💰 <b>Saldo restante:</b> {saldo_usuario} cr.\n"
     informe += f"📊 <b>Totales:</b> {estado['procesados']}/{estado['total']} (✅ {estado['exitosos']} | ❌ {estado['fallidos']})\n\n"
@@ -295,8 +277,10 @@ def generar_informe_propietario():
 
     informe += "\n🔴 <b>FALLOS (FAILS):</b>\n"
     if estado["lista_fallos"]:
-        for item in estado["lista_fallos"]:
+        for item in estado["lista_fallos"][:25]:
             informe += f"• <code>{item['cc']}</code> | {item['msg']}\n"
+        if len(estado["lista_fallos"]) > 25:
+            informe += f"<i>...y {len(estado['lista_fallos']) - 25} fallos más.</i>\n"
     else:
         informe += "<i>Sin fallos registrados.</i>\n"
 
@@ -501,22 +485,19 @@ def worker_principal():
                     estado["fallidos"] += 1
                     estado["lista_fallos"].append({"cc": linea_cc, "msg": mensaje_resultado})
 
-            # Notifica en tiempo real solo si es SUCCESS (Live)
-            if exito:
-                notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_resultado)
+            # Notificación en tiempo real para el cliente (tanto Success como Fail)
+            notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_resultado)
 
             with estado_lock:
                 if estado["procesados"] >= estado["total"] or estado["detener"]:
                     estado["en_progreso"] = False
                     if estado["procesados"] >= estado["total"]:
-                        # Envía el resumen completo con Lives y Fails al cliente al terminar
-                        resumen_final = generar_resumen_cliente(user_id)
+                        resumen_final = generar_resumen_proceso(user_id)
                         bot.send_message(
                             chat_id, 
-                            resumen_final, 
+                            "🏁 <b>¡Proceso completado con éxito!</b>\n\n" + resumen_final, 
                             parse_mode="HTML"
                         )
-                        # Envía el reporte completo al propietario
                         notificar_propietario(generar_informe_propietario())
                         notificar_usuarios_en_espera()
 
@@ -531,7 +512,7 @@ def worker_principal():
 def notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_detectado):
     if not chat_id:
         return
-    status_texto = "SUCCESS✅"
+    status_texto = "SUCCESS✅" if exito else "FAIL❌"
     mensaje = f"STATUS: {status_texto}\n💳 <code>{linea_cc}</code>\n💬 <b>Mensaje:</b> <i>{mensaje_detectado[:100]}</i>"
     try:
         bot.send_message(chat_id, mensaje, parse_mode="HTML")
@@ -609,6 +590,14 @@ def recibir_datos_lote(message):
     if not combos:
         bot.send_message(chat_id, "❌ El archivo `combo.txt` está vacío.")
         return
+
+    # 👇 LIMPIAR LA COLA DE TAREAS ANTES DE INSERTAR NUEVAS (Evita que se repitan procesos viejos)
+    while not cola_tareas.empty():
+        try:
+            cola_tareas.get_nowait()
+            cola_tareas.task_done()
+        except queue.Empty:
+            break
 
     with estado_lock:
         estado["en_progreso"] = True
@@ -826,7 +815,7 @@ def cmd_stop_proceso(message):
             break
 
     bot.send_message(chat_id, "🛑 <b>El proceso ha sido detenido por el usuario.</b>", parse_mode="HTML")
-    resumen_texto = generar_resumen_cliente(user_id)
+    resumen_texto = generar_resumen_proceso(user_id)
     bot.send_message(chat_id, resumen_texto, parse_mode="HTML")
     
     notificar_propietario(f"🛑 <b>Proceso detenido manualmente</b> por @{message.from_user.username or 'Anonimo'}")
@@ -844,7 +833,7 @@ def callback_listener(call):
         pass
 
     if call.data == "btn_check_ccs":
-        solicitar_datos_ccs(chat_id, user_id)
+        solicitar_data = solicitar_datos_ccs(chat_id, user_id)
     elif call.data == "btn_saldo":
         saldo = obtener_saldo(user_id)
         bot.send_message(chat_id, f"💰 Tienes <b>{saldo}</b> créditos disponibles.", parse_mode="HTML")
