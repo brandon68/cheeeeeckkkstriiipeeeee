@@ -191,8 +191,6 @@ def cobrar_creditos_por_resultado(user_id, es_exito):
         return 0, costo
 
 
-LIVES_FILE = os.path.join(BASE_DIR, "lives.txt")
-FAIL_FILE = os.path.join(BASE_DIR, "fail.txt")
 
 
 def validar_tarjeta(cc, mes, anio, cvv):
